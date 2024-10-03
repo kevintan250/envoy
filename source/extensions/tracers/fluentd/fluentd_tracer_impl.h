@@ -38,6 +38,32 @@ public:
 
 using EntryPtr = std::unique_ptr<Entry>;
 
+class SpanContext {
+  public:
+  SpanContext() = default;
+  SpanContext(const absl::string_view& trace_id, const absl::string_view& span_id, const absl::string_view& parent_span_id, bool sampled, std::chrono::system_clock::time_point start_time)
+      : trace_id_(trace_id), span_id_(span_id), parent_span_id_(parent_span_id), sampled_(sampled), start_time_(start_time) {}
+  
+  const std::string& traceId() const { return trace_id_; }
+
+  const std::string& spanId() const { return span_id_; }
+
+  const std::string& parentSpanId() const { return parent_span_id_; }
+
+  bool sampled() { return sampled_; }
+
+  const std::chrono::system_clock::time_point& startTime() const { return start_time_; }
+
+  void setSampled(bool sampled) { sampled_ = sampled; }
+
+private:
+  std::string trace_id_;
+  std::string span_id_;
+  std::string parent_span_id_;
+  bool sampled_;
+  std::chrono::system_clock::time_point start_time_;
+};
+
 class FluentdTracer {
 public:
   virtual ~FluentdTracer() = default;
@@ -46,10 +72,8 @@ public:
    * Send the Fluentd formatted message over the upstream TCP connection.
    */
   virtual void trace(EntryPtr&& entry) PURE;
+  
 };
-
-using FluentdTracerWeakPtr = std::weak_ptr<FluentdTracer>;
-using FluentdTracerSharedPtr = std::shared_ptr<FluentdTracer>;
 
 #define TRACER_FLUENTD_STATS(COUNTER, GAUGE)                                                       \
   COUNTER(entries_lost)                                                                            \
@@ -65,12 +89,13 @@ struct TracerFluentdStats {
 class FluentdTracerImpl : public Tcp::AsyncTcpClientCallbacks,
                           public Tracing::Driver,
                           public FluentdTracer,
+                          public std::enable_shared_from_this<FluentdTracerImpl>,
                           public Logger::Loggable<Logger::Id::tracing> {
 public:
   FluentdTracerImpl(Upstream::ThreadLocalCluster& cluster, Tcp::AsyncTcpClientPtr client,
                     Event::Dispatcher& dispatcher,
                     const FluentdConfig& config,
-                    BackOffStrategyPtr backoff_strategy, Stats::Scope& parent_scope);
+                    BackOffStrategyPtr backoff_strategy, Stats::Scope& parent_scope, Random::RandomGenerator& random);
 
   // Tcp::AsyncTcpClientCallbacks
   void onEvent(Network::ConnectionEvent event) override;
@@ -83,6 +108,10 @@ public:
                              const StreamInfo::StreamInfo& stream_info,
                              const std::string& operation_name,
                              Tracing::Decision tracing_decision) override;
+
+  Tracing::SpanPtr startSpan(const Tracing::Config& config, Tracing::TraceContext& trace_context, const StreamInfo::StreamInfo& stream_info,
+                             const std::string& operation_name,
+                             Tracing::Decision tracing_decision, SystemTime start_time, const SpanContext& previous_span_context);
 
   // FluentdTracer
   void trace(EntryPtr&& entry) override;
@@ -113,7 +142,11 @@ private:
   const Event::TimerPtr retry_timer_;
   const Event::TimerPtr flush_timer_;
   std::map<std::string, std::string> option_;
+  Random::RandomGenerator& random_;
 };
+
+using FluentdTracerWeakPtr = std::weak_ptr<FluentdTracerImpl>;
+using FluentdTracerSharedPtr = std::shared_ptr<FluentdTracerImpl>;
 
 class FluentdTracerCache {
 public:
@@ -175,6 +208,8 @@ private:
     ThreadLocalTracer(FluentdTracerSharedPtr tracer)
         : tracer_(std::move(tracer)) {}
 
+    FluentdTracerImpl& tracer() { return *tracer_; }
+
   private:
     FluentdTracerSharedPtr tracer_;
   };
@@ -188,7 +223,7 @@ class Span : public Tracing::Span {
 public:
   Span(const Tracing::Config& config, Tracing::TraceContext& trace_context,
        const StreamInfo::StreamInfo& stream_info, const std::string& operation_name,
-       Tracing::Decision tracing_decision); // TODO: figure out what this initializer does?????
+       Tracing::Decision tracing_decision, FluentdTracerSharedPtr tracer, const SpanContext& span_context);
 
   // Tracing::Span
   void setOperation(absl::string_view operation) override;
@@ -209,12 +244,11 @@ private:
   // config
   Tracing::TraceContext& trace_context_;
   const StreamInfo::StreamInfo& stream_info_;
-  FluentdTracerSharedPtr tracer_;
   std::string operation_;
   Tracing::Decision tracing_decision_;
-  const std::string trace_id_;
-  const std::string span_id_;
-  const std::chrono::steady_clock::time_point start_time_;
+  
+  FluentdTracerSharedPtr tracer_;
+  SpanContext span_context_;
   std::map<std::string, std::string> tags_;
 };
 

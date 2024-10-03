@@ -84,8 +84,8 @@
                                     "endpoint": {
                                         "address": {
                                             "socket_address": {
-                                                "address": "envoy-1",
-                                                "port_value": 10000
+                                                "address": "httpbin.org",
+                                                "port_value": 443
                                             }
                                         }
                                     }
@@ -93,20 +93,19 @@
                             ]
                         }
                     ]
+                },
+                "transport_socket": {
+                    "name": "envoy.transport_sockets.tls",
+                    "typed_config": {
+                        "@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext",
+                        "sni": "httpbin.org"
+                    }
                 }
             },
             {
                 "name": "opentelemetry_collector",
                 "type": "STRICT_DNS",
                 "lb_policy": "ROUND_ROBIN",
-                "typed_extension_protocol_options": {
-                    "envoy.extensions.upstreams.http.v3.HttpProtocolOptions": {
-                        "@type": "type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions",
-                        "explicit_http_config": {
-                            "http2_protocol_options": {}
-                        }
-                    }
-                },
                 "load_assignment": {
                     "cluster_name": "opentelemetry_collector",
                     "endpoints": [
@@ -116,8 +115,8 @@
                                     "endpoint": {
                                         "address": {
                                             "socket_address": {
-                                                "address": "opentelemetry",
-                                                "port_value": 4317
+                                                "address": "0.0.0.0",
+                                                "port_value": 8888
                                             }
                                         }
                                     }
