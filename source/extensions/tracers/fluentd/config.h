@@ -4,6 +4,7 @@
 #include "envoy/config/trace/v3/fluentd.pb.validate.h"
 
 #include "source/extensions/tracers/common/factory_base.h"
+#include "source/extensions/tracers/fluentd/fluentd_tracer_impl.h"
 
 namespace Envoy {
 namespace Extensions {
@@ -17,7 +18,9 @@ class FluentdTracerFactory : public Common::FactoryBase<envoy::config::trace::v3
 public:
   FluentdTracerFactory();
 
-private:
+  static FluentdTracerCacheSharedPtr getTracerCacheSingleton(Server::Configuration::ServerFactoryContext& context);
+
+//private:
   // FactoryBase
   Tracing::DriverSharedPtr
   createTracerDriverTyped(const envoy::config::trace::v3::FluentdConfig& proto_config,

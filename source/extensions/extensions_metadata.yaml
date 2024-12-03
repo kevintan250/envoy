@@ -1211,8 +1211,8 @@ envoy.tls.cert_validator.spiffe:
 envoy.tracers.fluentd:
   categories:
   - envoy.tracers
-  security_posture: unknown
-  status: wip
+  security_posture: robust_to_untrusted_downstream
+  status: alpha
   type_urls:
   - envoy.config.trace.v3.FluentdConfig
 envoy.tracers.datadog:

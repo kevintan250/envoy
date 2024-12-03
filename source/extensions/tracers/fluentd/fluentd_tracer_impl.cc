@@ -19,8 +19,6 @@ using MessagePackPacker = msgpack::packer<msgpack::sbuffer>;
 Driver::Driver(const FluentdConfigSharedPtr fluentd_config,
                Server::Configuration::TracerFactoryContext& context, FluentdTracerCacheSharedPtr tracer_cache)
     : tls_slot_(context.serverFactoryContext().threadLocal().allocateSlot()), fluentd_config_(fluentd_config), tracer_cache_(tracer_cache) {
-
-
       Random::RandomGenerator& random = context.serverFactoryContext().api().randomGenerator();
 
   tls_slot_->set(
@@ -65,6 +63,7 @@ FluentdTracerImpl::FluentdTracerImpl(Upstream::ThreadLocalCluster& cluster,
         flush_timer_->enableTimer(buffer_flush_interval_msec_);
       })),
       option_({{"fluent_signal", "2"}, {"TimeFormat", "DateTime"}}), random_(random) {
+
   client_->setAsyncTcpClientCallbacks(*this);
   flush_timer_->enableTimer(buffer_flush_interval_msec_);
 }
@@ -86,9 +85,11 @@ void Span::setTag(absl::string_view name, absl::string_view value) {
 }
 
 void Span::log(SystemTime timestamp, const std::string& event) {
-  // add a new entry object
-  uint64_t time =
-      std::chrono::duration_cast<std::chrono::seconds>(timestamp.time_since_epoch()).count();
+  // add a new entry object 
+  uint64_t time = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count();
+                  
   EntryPtr entry =
       std::make_unique<Entry>(time, std::map<std::string, std::string>{{"event", event}});
   tracer_->trace(std::move(entry));
@@ -97,8 +98,9 @@ void Span::log(SystemTime timestamp, const std::string& event) {
 void Span::finishSpan() {
   // make an entry object with the finish time and send it to the tracer
   uint64_t time = std::chrono::duration_cast<std::chrono::seconds>(
-                      std::chrono::steady_clock::now().time_since_epoch())
-                      .count();
+                    std::chrono::system_clock::now().time_since_epoch())
+                    .count();
+
 
   // make the record map
   std::map<std::string, std::string> record_map;
@@ -200,8 +202,7 @@ void FluentdTracerImpl::trace(EntryPtr&& entry) {
   approximate_message_size_bytes_ += sizeof(entry->time_) + entry->record_.size();
   entries_.push_back(std::move(entry));
   fluentd_stats_.entries_buffered_.inc();
-  //if (approximate_message_size_bytes_ >= max_buffer_size_bytes_) {
-  if (approximate_message_size_bytes_ >= 10) {
+  if (approximate_message_size_bytes_ >= max_buffer_size_bytes_) {
     // If we exceeded the buffer limit, immediately flush the logs instead of waiting for
     // the next flush interval, to allow new logs to be buffered.
     flush();
@@ -237,22 +238,16 @@ void FluentdTracerImpl::flush() {
   for (auto& entry : entries_) {
     packer.pack_array(2); // 1 - time, 2 - record.
     packer.pack(entry->time_);
-    /*
-    const char* record_bytes = reinterpret_cast<const char*>(&entry->record_[0]);
-    packer.pack_bin_body(record_bytes, entry->record_.size());
-    */
-
-    const std::map<std::string, std::string>& record_map = entry->record_;
-    packer.pack_map(record_map.size()); // Indicate the number of key-value pairs in the map
-    for (const auto& pair : record_map) {
+    packer.pack_map(entry->record_.size()); // Indicate the number of key-value pairs in the map
+    for (const auto& pair : entry->record_) {
       packer.pack(pair.first);  // Pack the key (string)
       packer.pack(pair.second); // Pack the value (string)
     }
-  }
-
+  }  
+  
   packer.pack(option_);
 
-  Buffer::OwnedImpl data(buffer.data(), buffer.size());
+  Buffer::OwnedImpl data(buffer.data(), buffer.size());    
   client_->write(data, false);
   fluentd_stats_.events_sent_.inc();
   clearBuffer();
@@ -261,7 +256,7 @@ void FluentdTracerImpl::flush() {
 void FluentdTracerImpl::connect() {
   connect_attempts_++;
   if (!client_->connect()) {
-    ENVOY_LOG(debug, "no healthy upstream");
+    ENVOY_LOG(info, "fluentd_tracer: no healthy upstream");
     maybeReconnect();
     return;
   }
@@ -279,7 +274,7 @@ void FluentdTracerImpl::maybeReconnect() {
 
   uint64_t next_backoff_ms = backoff_strategy_->nextBackOffMs();
   retry_timer_->enableTimer(std::chrono::milliseconds(next_backoff_ms));
-  ENVOY_LOG(debug, "reconnect attempt scheduled for {} ms", next_backoff_ms);
+  ENVOY_LOG(info, "fluentd_Tracer: reconnect attempt scheduled for {} ms", next_backoff_ms);
 }
 
 void FluentdTracerImpl::onBackoffCallback() {

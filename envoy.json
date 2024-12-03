@@ -5,7 +5,7 @@
                 "address": {
                     "socket_address": {
                         "address": "0.0.0.0",
-                        "port_value": 10000
+                        "port_value": 30443
                     }
                 },
                 "traffic_direction": "OUTBOUND",
@@ -22,12 +22,8 @@
                                             "name": "envoy.tracers.fluentd", "typed_config": { 
                                                 "@type": "type.googleapis.com/envoy.config.trace.v3.FluentdConfig", 
                                                 "cluster": "opentelemetry_collector", 
-                                                "tag": "fluentd_cluster", 
-                                                "stat_prefix": "fluentd_i", 
-                                                "record": { 
-                                                    "status": "%RESPONSE_CODE%", 
-                                                    "message": "%LOCAL_REPLY_BODY%" 
-                                                } 
+                                                "tag": "Span", 
+                                                "stat_prefix": "fluentd_i"
                                             }
                                         } 
                                     },

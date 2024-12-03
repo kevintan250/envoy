@@ -114,6 +114,7 @@ private:
 // during overload resolution, so these functions are no longer necessary and
 // cause segfaults due to attempting to infinitely reverse the operands back and
 // forth.
+/*
 #if __cplusplus < 202002L
 template <class T> static bool operator==(std::nullptr_t, const RefcountPtr<T>& a) {
   return a == nullptr; // NOLINT(clang-analyzer-cplusplus.Move)
@@ -122,7 +123,7 @@ template <class T> static bool operator!=(std::nullptr_t, const RefcountPtr<T>& 
   return a != nullptr;
 }
 #endif
-
+*/
 // Helper interface for classes to derive from, enabling implementation of the
 // three methods as part of derived classes. It is not necessary to inherit from
 // this interface to wrap a class in RefcountPtr; instead the class can just
