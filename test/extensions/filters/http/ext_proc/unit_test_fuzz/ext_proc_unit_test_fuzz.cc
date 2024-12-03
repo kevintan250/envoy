@@ -98,7 +98,7 @@ DEFINE_PROTO_FUZZER(
 
   ExternalProcessing::MockClient* client = new ExternalProcessing::MockClient();
   std::unique_ptr<ExternalProcessing::Filter> filter = std::make_unique<ExternalProcessing::Filter>(
-      config, ExternalProcessing::ExternalProcessorClientPtr{client}, proto_config.grpc_service());
+      config, ExternalProcessing::ExternalProcessorClientPtr{client});
   filter->setDecoderFilterCallbacks(mocks.decoder_callbacks_);
   filter->setEncoderFilterCallbacks(mocks.encoder_callbacks_);
 
@@ -118,7 +118,7 @@ DEFINE_PROTO_FUZZER(
             }));
         EXPECT_CALL(*stream, streamInfo())
             .WillRepeatedly(ReturnRef(mocks.async_client_stream_info_));
-        EXPECT_CALL(*stream, close()).WillRepeatedly(Return(false));
+        EXPECT_CALL(*stream, closeLocalStream()).WillRepeatedly(Return(false));
         return stream;
       }));
 

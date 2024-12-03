@@ -9,6 +9,7 @@
 #include "source/common/http/utility.h"
 #include "source/common/protobuf/utility.h"
 #include "source/common/runtime/runtime_features.h"
+#include "source/extensions/filters/http/ext_proc/http_client/http_client_impl.h"
 #include "source/extensions/filters/http/ext_proc/mutation_utils.h"
 
 #include "absl/strings/str_format.h"
@@ -21,6 +22,7 @@ namespace ExternalProcessing {
 namespace {
 
 using envoy::config::common::mutation_rules::v3::HeaderMutationRules;
+using envoy::extensions::filters::http::ext_proc::v3::ExternalProcessor;
 using envoy::extensions::filters::http::ext_proc::v3::ExtProcPerRoute;
 using envoy::extensions::filters::http::ext_proc::v3::ProcessingMode;
 using envoy::type::v3::StatusCode;
@@ -45,6 +47,14 @@ constexpr absl::string_view FilterName = "envoy.filters.http.ext_proc";
 absl::optional<ProcessingMode> initProcessingMode(const ExtProcPerRoute& config) {
   if (!config.disabled() && config.has_overrides() && config.overrides().has_processing_mode()) {
     return config.overrides().processing_mode();
+  }
+  return absl::nullopt;
+}
+
+absl::optional<envoy::config::core::v3::GrpcService>
+getFilterGrpcService(const ExternalProcessor& config) {
+  if (config.has_grpc_service()) {
+    return config.grpc_service();
   }
   return absl::nullopt;
 }
@@ -177,18 +187,19 @@ ProcessingMode allDisabledMode() {
 
 } // namespace
 
-FilterConfig::FilterConfig(
-    const envoy::extensions::filters::http::ext_proc::v3::ExternalProcessor& config,
-    const std::chrono::milliseconds message_timeout, const uint32_t max_message_timeout_ms,
-    Stats::Scope& scope, const std::string& stats_prefix, bool is_upstream,
-    Extensions::Filters::Common::Expr::BuilderInstanceSharedPtr builder,
-    Server::Configuration::CommonFactoryContext& context)
+FilterConfig::FilterConfig(const ExternalProcessor& config,
+                           const std::chrono::milliseconds message_timeout,
+                           const uint32_t max_message_timeout_ms, Stats::Scope& scope,
+                           const std::string& stats_prefix, bool is_upstream,
+                           Extensions::Filters::Common::Expr::BuilderInstanceSharedPtr builder,
+                           Server::Configuration::CommonFactoryContext& context)
     : failure_mode_allow_(config.failure_mode_allow()),
       observability_mode_(config.observability_mode()),
       route_cache_action_(config.route_cache_action()),
       deferred_close_timeout_(PROTOBUF_GET_MS_OR_DEFAULT(config, deferred_close_timeout,
                                                          DEFAULT_DEFERRED_CLOSE_TIMEOUT_MS)),
       message_timeout_(message_timeout), max_message_timeout_ms_(max_message_timeout_ms),
+      grpc_service_(getFilterGrpcService(config)),
       send_body_without_waiting_for_header_response_(
           config.send_body_without_waiting_for_header_response()),
       stats_(generateStats(stats_prefix, config.stat_prefix(), scope)),
@@ -215,15 +226,11 @@ FilterConfig::FilterConfig(
                           config.response_attributes()),
       immediate_mutation_checker_(context.regexEngine()),
       thread_local_stream_manager_slot_(context.threadLocal().allocateSlot()) {
-  if (config.disable_clear_route_cache() &&
-      (route_cache_action_ !=
-       envoy::extensions::filters::http::ext_proc::v3::ExternalProcessor::DEFAULT)) {
-    throw EnvoyException("disable_clear_route_cache and route_cache_action can not "
-                         "be set to none-default at the same time.");
-  }
+
   if (config.disable_clear_route_cache()) {
-    route_cache_action_ = envoy::extensions::filters::http::ext_proc::v3::ExternalProcessor::RETAIN;
+    route_cache_action_ = ExternalProcessor::RETAIN;
   }
+
   thread_local_stream_manager_slot_->set(
       [](Envoy::Event::Dispatcher&) { return std::make_shared<ThreadLocalStreamManager>(); });
 }
@@ -333,6 +340,44 @@ void Filter::setEncoderFilterCallbacks(Http::StreamEncoderFilterCallbacks& callb
   watermark_callbacks_.setEncoderFilterCallbacks(&callbacks);
 }
 
+void Filter::sendRequest(ProcessingRequest&& req, bool end_stream) {
+  // Calling the client send function to send the request.
+  client_->sendRequest(std::move(req), end_stream, filter_callbacks_->streamId(), this, stream_);
+}
+
+void Filter::onComplete(ProcessingResponse& response) {
+  ENVOY_LOG(debug, "Received successful response from server");
+  std::unique_ptr<ProcessingResponse> resp_ptr = std::make_unique<ProcessingResponse>(response);
+  onReceiveMessage(std::move(resp_ptr));
+}
+
+void Filter::onError() {
+  ENVOY_LOG(debug, "Received Error response from server");
+  stats_.http_not_ok_resp_received_.inc();
+
+  if (processing_complete_) {
+    ENVOY_LOG(debug, "Ignoring stream message received after processing complete");
+    return;
+  }
+
+  if (config_->failureModeAllow()) {
+    // The user would like a none-200-ok response to not cause message processing to fail.
+    // Close the external processing.
+    processing_complete_ = true;
+    stats_.failure_mode_allowed_.inc();
+    clearAsyncState();
+  } else {
+    // Return an error and stop processing the current stream.
+    processing_complete_ = true;
+    decoding_state_.onFinishProcessorCall(Grpc::Status::Aborted);
+    encoding_state_.onFinishProcessorCall(Grpc::Status::Aborted);
+    ImmediateResponse errorResponse;
+    errorResponse.mutable_status()->set_code(StatusCode::InternalServerError);
+    errorResponse.set_details(absl::StrCat(ErrorPrefix, "_HTTP_ERROR"));
+    sendImmediateResponse(errorResponse);
+  }
+}
+
 Filter::StreamOpenState Filter::openStream() {
   // External processing is completed. This means there is no need to send any further
   // message to the server for processing. Just return IgnoreError so the filter
@@ -341,7 +386,12 @@ Filter::StreamOpenState Filter::openStream() {
     ENVOY_LOG(debug, "External processing is completed when trying to open the gRPC stream");
     return StreamOpenState::IgnoreError;
   }
-  if (!client_->stream()) {
+
+  if (!config().grpcService().has_value()) {
+    return StreamOpenState::Ok;
+  }
+
+  if (!stream_) {
     ENVOY_LOG(debug, "Opening gRPC stream to external processor");
 
     Http::AsyncClient::ParentContext grpc_context;
@@ -351,8 +401,9 @@ Filter::StreamOpenState Filter::openStream() {
                        .setParentContext(grpc_context)
                        .setBufferBodyForRetry(grpc_service_.has_retry_policy());
 
+    ExternalProcessorClient* grpc_client = dynamic_cast<ExternalProcessorClient*>(client_.get());
     ExternalProcessorStreamPtr stream_object =
-        client_->start(*this, config_with_hash_key_, options, watermark_callbacks_);
+        grpc_client->start(*this, config_with_hash_key_, options, watermark_callbacks_);
 
     if (processing_complete_) {
       // Stream failed while starting and either onGrpcError or onGrpcClose was already called
@@ -363,35 +414,52 @@ Filter::StreamOpenState Filter::openStream() {
     }
     stats_.streams_started_.inc();
 
-    ExternalProcessorStream* stream = config_->threadLocalStreamManager().store(
-        std::move(stream_object), config_->stats(), config_->deferredCloseTimeout());
-    client_->setStream(stream);
+    stream_ = config_->threadLocalStreamManager().store(std::move(stream_object), config_->stats(),
+                                                        config_->deferredCloseTimeout());
     // For custom access logging purposes. Applicable only for Envoy gRPC as Google gRPC does not
     // have a proper implementation of streamInfo.
     if (grpc_service_.has_envoy_grpc() && logging_info_ != nullptr) {
-      logging_info_->setClusterInfo(client_->stream()->streamInfo().upstreamClusterInfo());
+      logging_info_->setClusterInfo(stream_->streamInfo().upstreamClusterInfo());
     }
   }
   return StreamOpenState::Ok;
 }
 
 void Filter::closeStream() {
-  if (client_->stream()) {
+  if (!config_->grpcService().has_value()) {
+    return;
+  }
+  // Stream not opened or already cleaned up.
+  if (stream_ == nullptr) {
+    ENVOY_LOG(debug, "Stream already closed or not opened yet.");
+    return;
+  }
+
+  if (!stream_->localClosed()) {
     ENVOY_LOG(debug, "Calling close on stream");
-    if (client_->stream()->close()) {
+    if (stream_->closeLocalStream()) {
       stats_.streams_closed_.inc();
     }
-    config_->threadLocalStreamManager().erase(client_->stream());
-    client_->setStream(nullptr);
-  } else {
-    ENVOY_LOG(debug, "Stream already closed");
   }
 }
 
-void Filter::deferredCloseStream() {
-  ENVOY_LOG(debug, "Calling deferred close on stream");
-  config_->threadLocalStreamManager().deferredErase(client_->stream(),
-                                                    filter_callbacks_->dispatcher());
+void Filter::deferredResetStream() {
+  ENVOY_LOG(debug, "Calling deferred cleanup on stream");
+  if (stream_ == nullptr) {
+    ENVOY_LOG(debug, "Stream already reset or not opened yet.");
+    return;
+  }
+  config_->threadLocalStreamManager().deferredErase(stream_, filter_callbacks_->dispatcher());
+  stream_ = nullptr;
+}
+
+void Filter::cleanupStream() {
+  ENVOY_LOG(debug, "Calling cleanup stream");
+  if (stream_ != nullptr) {
+    stream_->resetStream();
+    config_->threadLocalStreamManager().erase(stream_);
+    stream_ = nullptr;
+  }
 }
 
 void Filter::onDestroy() {
@@ -402,22 +470,34 @@ void Filter::onDestroy() {
   decoding_state_.stopMessageTimer();
   encoding_state_.stopMessageTimer();
 
-  if (config_->observabilityMode()) {
-    // In observability mode where the main stream processing and side stream processing are
-    // asynchronous, it is possible that filter instance is destroyed before the side stream request
-    // arrives at ext_proc server. In order to prevent the data loss in this case, side stream
-    // closure is deferred upon filter destruction with a timer.
-
-    // First, release the referenced filter resource.
-    if (client_->stream() != nullptr) {
-      client_->stream()->notifyFilterDestroy();
+  if (!config_->grpcService().has_value()) {
+    client_->cancel();
+    return;
+  }
+  if (stream_ != nullptr) {
+    if (!stream_->localClosed()) {
+      // Perform immediate close on the stream otherwise.
+      closeStream();
     }
+    // Defer the resource cleanup if the remote is not closed (no trailers
+    // received).
+    // This means essentially not sending a reset to the server, which
+    // translates into a client CANCELED error on the server side.
+    if (config_->observabilityMode() || !stream_->remoteClosed()) {
+      // In observability mode where the main stream processing and side stream
+      // processing are asynchronous, it is possible that filter instance is
+      // destroyed before the side stream request arrives at ext_proc server. In
+      // order to prevent the data loss in this case, side stream resetting is
+      // deferred upon filter destruction with a timer.
 
-    // Second, perform stream deferred closure.
-    deferredCloseStream();
-  } else {
-    // Perform immediate close on the stream otherwise.
-    closeStream();
+      // First, release the referenced filter resource.
+      stream_->notifyFilterDestroy();
+      // Second, perform stream deferred closure.
+      deferredResetStream();
+    } else {
+      // Server closed the stream, so we can cleanup the stream immediately.
+      cleanupStream();
+    }
   }
 }
 
@@ -440,7 +520,7 @@ FilterHeadersStatus Filter::onHeaders(ProcessorState& state,
   state.onStartProcessorCall(std::bind(&Filter::onMessageTimeout, this), config_->messageTimeout(),
                              ProcessorState::CallbackState::HeadersCallback);
   ENVOY_LOG(debug, "Sending headers message");
-  client_->stream()->send(std::move(req), false);
+  sendRequest(std::move(req), false);
   stats_.stream_msgs_sent_.inc();
   state.setPaused(true);
   return FilterHeadersStatus::StopIteration;
@@ -478,7 +558,142 @@ FilterHeadersStatus Filter::decodeHeaders(RequestHeaderMap& headers, bool end_st
   return status;
 }
 
+FilterDataStatus Filter::handleDataBufferedMode(ProcessorState& state, Buffer::Instance& data,
+                                                bool end_stream) {
+  if (end_stream) {
+    switch (openStream()) {
+    case StreamOpenState::Error:
+      return FilterDataStatus::StopIterationNoBuffer;
+    case StreamOpenState::IgnoreError:
+      return FilterDataStatus::Continue;
+    case StreamOpenState::Ok:
+      break;
+    }
+
+    // The body has been buffered and we need to send the buffer
+    ENVOY_LOG(debug, "Sending request body message");
+    state.addBufferedData(data);
+    ProcessingRequest req = setupBodyChunk(state, *state.bufferedData(), end_stream);
+    sendBodyChunk(state, ProcessorState::CallbackState::BufferedBodyCallback, req);
+    // Since we just just moved the data into the buffer, return NoBuffer
+    // so that we do not buffer this chunk twice.
+    state.setPaused(true);
+    return FilterDataStatus::StopIterationNoBuffer;
+  }
+  ENVOY_LOG(trace, "onData: Buffering");
+  state.setPaused(true);
+  return FilterDataStatus::StopIterationAndBuffer;
+}
+
+FilterDataStatus Filter::handleDataStreamedModeBase(ProcessorState& state, Buffer::Instance& data,
+                                                    bool end_stream) {
+  switch (openStream()) {
+  case StreamOpenState::Error:
+    return FilterDataStatus::StopIterationNoBuffer;
+  case StreamOpenState::IgnoreError:
+    return FilterDataStatus::Continue;
+  case StreamOpenState::Ok:
+    break;
+  }
+
+  ProcessingRequest req = setupBodyChunk(state, data, end_stream);
+  if (state.bodyMode() != ProcessingMode::FULL_DUPLEX_STREAMED) {
+    state.enqueueStreamingChunk(data, end_stream);
+  } else {
+    // For FULL_DUPLEX_STREAMED mode, just drain the data.
+    data.drain(data.length());
+  }
+  // If the current state is HeadersCallback, stays in that state.
+  if (state.callbackState() == ProcessorState::CallbackState::HeadersCallback) {
+    sendBodyChunk(state, ProcessorState::CallbackState::HeadersCallback, req);
+  } else {
+    sendBodyChunk(state, ProcessorState::CallbackState::StreamedBodyCallback, req);
+  }
+  if (end_stream || state.callbackState() == ProcessorState::CallbackState::HeadersCallback) {
+    state.setPaused(true);
+    return FilterDataStatus::StopIterationNoBuffer;
+  } else {
+    return FilterDataStatus::Continue;
+  }
+}
+
+FilterDataStatus Filter::handleDataStreamedMode(ProcessorState& state, Buffer::Instance& data,
+                                                bool end_stream) {
+  // STREAMED body mode works as follows:
+  //
+  // 1) As data callbacks come in to the filter, it "moves" the data into a new buffer, which it
+  // dispatches via gRPC message to the external processor, and then keeps in a queue. It
+  // may request a watermark if the queue is higher than the buffer limit to prevent running
+  // out of memory.
+  // 2) As a result, filters farther down the chain see empty buffers in some data callbacks.
+  // 3) When a response comes back from the external processor, it injects the processor's result
+  // into the filter chain using "inject**codedData". (The processor may respond indicating that
+  // there is no change, which means that the original buffer stored in the queue is what gets
+  // injected.)
+  //
+  // This way, we pipeline data from the proxy to the external processor, and give the processor
+  // the ability to modify each chunk, in order. Doing this any other way would have required
+  // substantial changes to the filter manager. See
+  // https://github.com/envoyproxy/envoy/issues/16760 for a discussion.
+  return handleDataStreamedModeBase(state, data, end_stream);
+}
+
+FilterDataStatus Filter::handleDataFullDuplexStreamedMode(ProcessorState& state,
+                                                          Buffer::Instance& data, bool end_stream) {
+  // FULL_DUPLEX_STREAMED body mode works similar to STREAMED except it does not put the data
+  // into the internal queue. And there is no internal queue based flow control. A copy of the
+  // data is dispatched to the external processor and the original data is drained.
+  return handleDataStreamedModeBase(state, data, end_stream);
+}
+
+FilterDataStatus Filter::handleDataBufferedPartialMode(ProcessorState& state,
+                                                       Buffer::Instance& data, bool end_stream) {
+  // BUFFERED_PARTIAL mode works as follows:
+  //
+  // 1) As data chunks arrive, we move the data into a new buffer, which we store
+  // in the buffer queue, and continue the filter stream with an empty buffer. This
+  // is the same thing that we do in STREAMING mode.
+  // 2) If end of stream is reached before the queue reaches the buffer limit, we
+  // send the buffered data to the server and essentially behave as if we are in
+  // buffered mode.
+  // 3) If instead the buffer limit is reached before end of stream, then we also
+  // send the buffered data to the server, and raise the watermark to prevent Envoy
+  // from running out of memory while we wait.
+  // 4) It is possible that Envoy will keep sending us data even in that case, so
+  // we must continue to queue data and prepare to re-inject it later.
+  if (state.partialBodyProcessed()) {
+    // We already sent and received the buffer, so everything else just falls through.
+    ENVOY_LOG(trace, "Partial buffer limit reached");
+    // Make sure that we do not accidentally try to modify the headers before
+    // we continue, which will result in them possibly being sent.
+    state.setHeaders(nullptr);
+    return FilterDataStatus::Continue;
+  } else if (state.callbackState() == ProcessorState::CallbackState::BufferedPartialBodyCallback) {
+    // More data came in while we were waiting for a callback result. We need
+    // to queue it and deliver it later in case the callback changes the data.
+    state.enqueueStreamingChunk(data, end_stream);
+    ENVOY_LOG(trace, "Call in progress for partial mode");
+    state.setPaused(true);
+    return FilterDataStatus::StopIterationNoBuffer;
+  } else {
+    state.enqueueStreamingChunk(data, end_stream);
+    if (end_stream || state.queueOverHighLimit()) {
+      // At either end of stream or when the buffer is full, it's time to send what we have
+      // to the processor.
+      bool terminate;
+      FilterDataStatus chunk_result;
+      std::tie(terminate, chunk_result) = sendStreamChunk(state);
+      if (terminate) {
+        return chunk_result;
+      }
+    }
+    return FilterDataStatus::StopIterationNoBuffer;
+  }
+}
+
 FilterDataStatus Filter::onData(ProcessorState& state, Buffer::Instance& data, bool end_stream) {
+  state.setBodyReceived(true);
+
   if (config_->observabilityMode()) {
     return sendDataInObservabilityMode(data, state, end_stream);
   }
@@ -497,20 +712,21 @@ FilterDataStatus Filter::onData(ProcessorState& state, Buffer::Instance& data, b
   }
 
   if (state.callbackState() == ProcessorState::CallbackState::HeadersCallback) {
-    if (state.bodyMode() == ProcessingMode::STREAMED &&
-        config_->sendBodyWithoutWaitingForHeaderResponse()) {
-      ENVOY_LOG(trace, "Sending body data even header processing is still in progress as body mode "
-                       "is STREAMED and send_body_without_waiting_for_header_response is enabled");
+    if ((state.bodyMode() == ProcessingMode::STREAMED &&
+         config_->sendBodyWithoutWaitingForHeaderResponse()) ||
+        state.bodyMode() == ProcessingMode::FULL_DUPLEX_STREAMED) {
+      ENVOY_LOG(trace,
+                "Sending body data even though header processing is still in progress as body mode "
+                "is FULL_DUPLEX_STREAMED or STREAMED and "
+                "send_body_without_waiting_for_header_response is enabled");
     } else {
       ENVOY_LOG(trace, "Header processing still in progress -- holding body data");
       // We don't know what to do with the body until the response comes back.
-      // We must buffer it in case we need it when that happens.
-      // Raise a watermark to prevent a buffer overflow until the response comes back.
-      // When end_stream is true, we need to StopIterationAndWatermark as well to stop the
-      // ActiveStream from returning error when the last chunk added to stream buffer exceeds the
-      // buffer limit.
+      // We must buffer it in case we need it when that happens. Watermark will be raised when the
+      // buffered data reaches the buffer's watermark limit. When end_stream is true, we need to
+      // StopIterationAndWatermark as well to stop the ActiveStream from returning error when the
+      // last chunk added to stream buffer exceeds the buffer limit.
       state.setPaused(true);
-      state.requestWatermark();
       return FilterDataStatus::StopIterationAndWatermark;
     }
   }
@@ -518,126 +734,23 @@ FilterDataStatus Filter::onData(ProcessorState& state, Buffer::Instance& data, b
   FilterDataStatus result;
   switch (state.bodyMode()) {
   case ProcessingMode::BUFFERED:
-    if (end_stream) {
-      switch (openStream()) {
-      case StreamOpenState::Error:
-        return FilterDataStatus::StopIterationNoBuffer;
-      case StreamOpenState::IgnoreError:
-        return FilterDataStatus::Continue;
-      case StreamOpenState::Ok:
-        // Fall through
-        break;
-      }
-
-      // The body has been buffered and we need to send the buffer
-      ENVOY_LOG(debug, "Sending request body message");
-      state.addBufferedData(data);
-      auto req = setupBodyChunk(state, *state.bufferedData(), end_stream);
-      sendBodyChunk(state, ProcessorState::CallbackState::BufferedBodyCallback, req);
-      // Since we just just moved the data into the buffer, return NoBuffer
-      // so that we do not buffer this chunk twice.
-      state.setPaused(true);
-      result = FilterDataStatus::StopIterationNoBuffer;
-      break;
-    }
-    ENVOY_LOG(trace, "onData: Buffering");
-    state.setPaused(true);
-    result = FilterDataStatus::StopIterationAndBuffer;
+    result = handleDataBufferedMode(state, data, end_stream);
     break;
-  case ProcessingMode::STREAMED: {
-    // STREAMED body mode works as follows:
-    //
-    // 1) As data callbacks come in to the filter, it "moves" the data into a new buffer, which it
-    // dispatches via gRPC message to the external processor, and then keeps in a queue. It
-    // may request a watermark if the queue is higher than the buffer limit to prevent running
-    // out of memory.
-    // 2) As a result, filters farther down the chain see empty buffers in some data callbacks.
-    // 3) When a response comes back from the external processor, it injects the processor's result
-    // into the filter chain using "inject**codedData". (The processor may respond indicating that
-    // there is no change, which means that the original buffer stored in the queue is what gets
-    // injected.)
-    //
-    // This way, we pipeline data from the proxy to the external processor, and give the processor
-    // the ability to modify each chunk, in order. Doing this any other way would have required
-    // substantial changes to the filter manager. See
-    // https://github.com/envoyproxy/envoy/issues/16760 for a discussion.
-    switch (openStream()) {
-    case StreamOpenState::Error:
-      return FilterDataStatus::StopIterationNoBuffer;
-    case StreamOpenState::IgnoreError:
-      return FilterDataStatus::Continue;
-    case StreamOpenState::Ok:
-      // Fall through
-      break;
-    }
-
-    // Need to first enqueue the data into the chunk queue before sending.
-    auto req = setupBodyChunk(state, data, end_stream);
-    state.enqueueStreamingChunk(data, end_stream);
-    // If the current state is HeadersCallback, stays in that state.
-    if (state.callbackState() == ProcessorState::CallbackState::HeadersCallback) {
-      sendBodyChunk(state, ProcessorState::CallbackState::HeadersCallback, req);
-    } else {
-      sendBodyChunk(state, ProcessorState::CallbackState::StreamedBodyCallback, req);
-    }
-    if (end_stream || state.callbackState() == ProcessorState::CallbackState::HeadersCallback) {
-      state.setPaused(true);
-      result = FilterDataStatus::StopIterationNoBuffer;
-    } else {
-      result = FilterDataStatus::Continue;
-    }
+  case ProcessingMode::STREAMED:
+    result = handleDataStreamedMode(state, data, end_stream);
     break;
-  }
+  case ProcessingMode::FULL_DUPLEX_STREAMED:
+    result = handleDataFullDuplexStreamedMode(state, data, end_stream);
+    break;
   case ProcessingMode::BUFFERED_PARTIAL:
-    // BUFFERED_PARTIAL mode works as follows:
-    //
-    // 1) As data chunks arrive, we move the data into a new buffer, which we store
-    // in the buffer queue, and continue the filter stream with an empty buffer. This
-    // is the same thing that we do in STREAMING mode.
-    // 2) If end of stream is reached before the queue reaches the buffer limit, we
-    // send the buffered data to the server and essentially behave as if we are in
-    // buffered mode.
-    // 3) If instead the buffer limit is reached before end of stream, then we also
-    // send the buffered data to the server, and raise the watermark to prevent Envoy
-    // from running out of memory while we wait.
-    // 4) It is possible that Envoy will keep sending us data even in that case, so
-    // we must continue to queue data and prepare to re-inject it later.
-    if (state.partialBodyProcessed()) {
-      // We already sent and received the buffer, so everything else just falls through.
-      ENVOY_LOG(trace, "Partial buffer limit reached");
-      // Make sure that we do not accidentally try to modify the headers before
-      // we continue, which will result in them possibly being sent.
-      state.setHeaders(nullptr);
-      result = FilterDataStatus::Continue;
-    } else if (state.callbackState() ==
-               ProcessorState::CallbackState::BufferedPartialBodyCallback) {
-      // More data came in while we were waiting for a callback result. We need
-      // to queue it and deliver it later in case the callback changes the data.
-      state.enqueueStreamingChunk(data, end_stream);
-      ENVOY_LOG(trace, "Call in progress for partial mode");
-      state.setPaused(true);
-      result = FilterDataStatus::StopIterationNoBuffer;
-    } else {
-      state.enqueueStreamingChunk(data, end_stream);
-      if (end_stream || state.queueOverHighLimit()) {
-        // At either end of stream or when the buffer is full, it's time to send what we have
-        // to the processor.
-        bool terminate;
-        FilterDataStatus chunk_result;
-        std::tie(terminate, chunk_result) = sendStreamChunk(state);
-        if (terminate) {
-          return chunk_result;
-        }
-      }
-      result = FilterDataStatus::StopIterationNoBuffer;
-    }
+    result = handleDataBufferedPartialMode(state, data, end_stream);
     break;
   case ProcessingMode::NONE:
+    ABSL_FALLTHROUGH_INTENDED;
   default:
     result = FilterDataStatus::Continue;
     break;
   }
-
   return result;
 }
 
@@ -673,7 +786,7 @@ Filter::sendHeadersInObservabilityMode(Http::RequestOrResponseHeaderMap& headers
   ProcessingRequest req =
       buildHeaderRequest(state, headers, end_stream, /*observability_mode=*/true);
   ENVOY_LOG(debug, "Sending headers message in observability mode");
-  client_->stream()->send(std::move(req), false);
+  sendRequest(std::move(req), false);
   stats_.stream_msgs_sent_.inc();
 
   return FilterHeadersStatus::Continue;
@@ -698,7 +811,7 @@ Http::FilterDataStatus Filter::sendDataInObservabilityMode(Buffer::Instance& dat
     // Set up the the body chunk and send.
     auto req = setupBodyChunk(state, data, end_stream);
     req.set_observability_mode(true);
-    client_->stream()->send(std::move(req), false);
+    sendRequest(std::move(req), false);
     stats_.stream_msgs_sent_.inc();
     ENVOY_LOG(debug, "Sending body message in ObservabilityMode");
   } else if (state.bodyMode() != ProcessingMode::NONE) {
@@ -761,7 +874,8 @@ FilterTrailersStatus Filter::onTrailers(ProcessorState& state, Http::HeaderMap& 
   state.setTrailersAvailable(true);
   state.setTrailers(&trailers);
 
-  if (state.callbackState() != ProcessorState::CallbackState::Idle) {
+  if ((state.callbackState() != ProcessorState::CallbackState::Idle) &&
+      (state.bodyMode() != ProcessingMode::FULL_DUPLEX_STREAMED)) {
     ENVOY_LOG(trace, "Previous callback still executing -- holding header iteration");
     state.setPaused(true);
     return FilterTrailersStatus::StopIteration;
@@ -890,12 +1004,18 @@ void Filter::sendBodyChunk(ProcessorState& state, ProcessorState::CallbackState 
                            ProcessingRequest& req) {
   state.onStartProcessorCall(std::bind(&Filter::onMessageTimeout, this), config_->messageTimeout(),
                              new_state);
-  client_->stream()->send(std::move(req), false);
+  sendRequest(std::move(req), false);
   stats_.stream_msgs_sent_.inc();
 }
 
 void Filter::sendTrailers(ProcessorState& state, const Http::HeaderMap& trailers,
                           bool observability_mode) {
+  // Skip if the trailers is already sent to the server.
+  if (state.trailersSentToServer()) {
+    return;
+  }
+  state.setTrailersSentToServer(true);
+
   ProcessingRequest req;
   req.set_observability_mode(observability_mode);
   addAttributes(state, req);
@@ -903,24 +1023,36 @@ void Filter::sendTrailers(ProcessorState& state, const Http::HeaderMap& trailers
   auto* trailers_req = state.mutableTrailers(req);
   MutationUtils::headersToProto(trailers, config_->allowedHeaders(), config_->disallowedHeaders(),
                                 *trailers_req->mutable_trailers());
-  state.onStartProcessorCall(std::bind(&Filter::onMessageTimeout, this), config_->messageTimeout(),
-                             ProcessorState::CallbackState::TrailersCallback);
-  ENVOY_LOG(debug, "Sending trailers message");
-  client_->stream()->send(std::move(req), false);
+  if (observability_mode) {
+    ENVOY_LOG(debug, "Sending trailers message in observability mode");
+  } else {
+    ProcessorState::CallbackState callback_state = state.callbackState();
+    if (callback_state == ProcessorState::CallbackState::Idle) {
+      callback_state = ProcessorState::CallbackState::TrailersCallback;
+    }
+    state.onStartProcessorCall(std::bind(&Filter::onMessageTimeout, this),
+                               config_->messageTimeout(), callback_state);
+    ENVOY_LOG(debug, "Sending trailers message");
+  }
+
+  sendRequest(std::move(req), false);
   stats_.stream_msgs_sent_.inc();
 }
 
 void Filter::logGrpcStreamInfo() {
-  if (client_->stream() != nullptr && logging_info_ != nullptr && grpc_service_.has_envoy_grpc()) {
-    const auto& upstream_meter = client_->stream()->streamInfo().getUpstreamBytesMeter();
+  if (!config().grpcService().has_value()) {
+    return;
+  }
+
+  if (stream_ != nullptr && logging_info_ != nullptr && grpc_service_.has_envoy_grpc()) {
+    const auto& upstream_meter = stream_->streamInfo().getUpstreamBytesMeter();
     if (upstream_meter != nullptr) {
       logging_info_->setBytesSent(upstream_meter->wireBytesSent());
       logging_info_->setBytesReceived(upstream_meter->wireBytesReceived());
     }
     // Only set upstream host in logging info once.
     if (logging_info_->upstreamHost() == nullptr) {
-      logging_info_->setUpstreamHost(
-          client_->stream()->streamInfo().upstreamInfo()->upstreamHost());
+      logging_info_->setUpstreamHost(stream_->streamInfo().upstreamInfo()->upstreamHost());
     }
   }
 }
@@ -1085,24 +1217,26 @@ void Filter::onReceiveMessage(std::unique_ptr<ProcessingResponse>&& r) {
   // and filter is waiting for header processing response.
   // Otherwise, the response mode_override proto field is ignored.
   if (config_->allowModeOverride() && !config_->sendBodyWithoutWaitingForHeaderResponse() &&
+      (config_->processingMode().request_body_mode() != ProcessingMode::FULL_DUPLEX_STREAMED) &&
+      (config_->processingMode().response_body_mode() != ProcessingMode::FULL_DUPLEX_STREAMED) &&
       inHeaderProcessState() && response->has_mode_override()) {
     bool mode_override_allowed = true;
-    const auto& mode_overide = response->mode_override();
+    const auto& mode_override = response->mode_override();
     // First, check if mode override allow-list is configured
     if (!config_->allowedOverrideModes().empty()) {
       // Second, check if mode override from response is allowed.
       mode_override_allowed = absl::c_any_of(
           config_->allowedOverrideModes(),
-          [&mode_overide](
+          [&mode_override](
               const envoy::extensions::filters::http::ext_proc::v3::ProcessingMode& other) {
-            return Protobuf::util::MessageDifferencer::Equals(mode_overide, other);
+            return Protobuf::util::MessageDifferencer::Equals(mode_override, other);
           });
     }
 
     if (mode_override_allowed) {
       ENVOY_LOG(debug, "Processing mode overridden by server for this request");
-      decoding_state_.setProcessingMode(mode_overide);
-      encoding_state_.setProcessingMode(mode_overide);
+      decoding_state_.setProcessingMode(mode_override);
+      encoding_state_.setProcessingMode(mode_override);
     } else {
       ENVOY_LOG(debug, "Processing mode overridden by server is disallowed");
     }
@@ -1209,6 +1343,7 @@ void Filter::onGrpcError(Grpc::Status::GrpcStatus status) {
     // make sure that they do not fire now.
     onFinishProcessorCalls(status);
     closeStream();
+    cleanupStream();
     ImmediateResponse errorResponse;
     errorResponse.mutable_status()->set_code(StatusCode::InternalServerError);
     errorResponse.set_details(absl::StrFormat("%s_gRPC_error_%i", ErrorPrefix, status));
@@ -1220,10 +1355,14 @@ void Filter::onGrpcClose() {
   ENVOY_LOG(debug, "Received gRPC stream close");
 
   processing_complete_ = true;
-  stats_.streams_closed_.inc();
   // Successful close. We can ignore the stream for the rest of our request
   // and response processing.
   closeStream();
+  // ExternalProcessorStreamImpl::onRemoteClose will call onGrpcClose in either
+  // happy path or error path.
+  // This will mark remote_closed_ as closed.
+  cleanupStream();
+
   clearAsyncState();
 }
 
@@ -1238,6 +1377,7 @@ void Filter::onMessageTimeout() {
     // the external processor for the rest of the request.
     processing_complete_ = true;
     closeStream();
+    cleanupStream();
     stats_.failure_mode_allowed_.inc();
     clearAsyncState();
 
@@ -1245,6 +1385,7 @@ void Filter::onMessageTimeout() {
     // Return an error and stop processing the current stream.
     processing_complete_ = true;
     closeStream();
+    cleanupStream();
     decoding_state_.onFinishProcessorCall(Grpc::Status::DeadlineExceeded);
     encoding_state_.onFinishProcessorCall(Grpc::Status::DeadlineExceeded);
     ImmediateResponse errorResponse;
@@ -1386,13 +1527,12 @@ void Filter::mergePerRouteConfig() {
   }
 }
 
-void DeferredDeletableStream::closeStreamOnTimer() {
+void DeferredDeletableStream::cleanupStreamOnTimer() {
   // Close the stream.
-  if (stream_) {
-    ENVOY_LOG(debug, "Closing the stream");
-    if (stream_->close()) {
-      stats.streams_closed_.inc();
-    }
+  if (stream_ != nullptr) {
+    ENVOY_LOG(debug, "Resetting the stream.");
+    // After timeout if still no trailers received, reset the stream.
+    stream_->resetStream();
     // Erase this entry from the map; this will also reset the stream_ pointer.
     parent.erase(stream_.get());
   } else {
@@ -1403,7 +1543,7 @@ void DeferredDeletableStream::closeStreamOnTimer() {
 // In the deferred closure mode, stream closure is deferred upon filter destruction, with a timer
 // to prevent unbounded resource usage growth.
 void DeferredDeletableStream::deferredClose(Envoy::Event::Dispatcher& dispatcher) {
-  derferred_close_timer = dispatcher.createTimer([this] { closeStreamOnTimer(); });
+  derferred_close_timer = dispatcher.createTimer([this] { cleanupStreamOnTimer(); });
   derferred_close_timer->enableTimer(std::chrono::milliseconds(deferred_close_timeout));
 }
 
