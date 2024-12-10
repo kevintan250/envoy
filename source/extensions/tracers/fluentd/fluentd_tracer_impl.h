@@ -202,7 +202,7 @@ public:
                              const std::string& operation_name,
                              Tracing::Decision tracing_decision) override;
 
-
+private:
   class ThreadLocalTracer : public ThreadLocal::ThreadLocalObject {
   public:
     ThreadLocalTracer(FluentdTracerSharedPtr tracer)
@@ -210,7 +210,6 @@ public:
 
     FluentdTracerImpl& tracer() { return *tracer_; }
 
-  private:
     FluentdTracerSharedPtr tracer_;
   };
   

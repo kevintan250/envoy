@@ -19,7 +19,8 @@
                                     "generate_request_id": true,
                                     "tracing": { 
                                         "provider": { 
-                                            "name": "envoy.tracers.fluentd", "typed_config": { 
+                                            "name": "envoy.tracers.fluentd", 
+                                            "typed_config": { 
                                                 "@type": "type.googleapis.com/envoy.config.trace.v3.FluentdConfig", 
                                                 "cluster": "opentelemetry_collector", 
                                                 "tag": "Span", 

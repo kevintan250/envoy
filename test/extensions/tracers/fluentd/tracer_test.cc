@@ -26,6 +26,8 @@
 #include "test/test_common/simulated_time_system.h"
 #include "test/test_common/utility.h"
 #include "source/common/tracing/trace_context_impl.h"
+#include "source/common/thread_local/thread_local_impl.h"
+#include "source/common/event/dispatcher_impl.h"
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -350,8 +352,16 @@ public:
 class FluentdTracerTest : public testing::Test {
 public:
   FluentdTracerTest() {
-    FluentdTracerFactory factory;
-    cache_ = factory.getTracerCacheSingleton(context_.server_factory_context_);
+    Envoy::Event::DispatcherImpl dispatcher("test_thread");
+    thread_local_slot_allocator_.registerThread(dispatcher, true);
+
+    cache_ = context.singletonManager().getTyped<FluentdTracerCacheImpl>(
+      SINGLETON_MANAGER_REGISTERED_NAME(fluentd_tracer_cache),
+      [&context] {
+        return std::make_shared<FluentdTracerCacheImpl>(context.clusterManager(), context.scope(),
+                                                    context.threadLocal());
+      },
+      /* pin = */ true);
     ASSERT_NE(nullptr, cache_);
   }
 
@@ -413,177 +423,14 @@ protected:
   NiceMock<Stats::MockIsolatedStatsStore> stats_;
   Stats::Scope& scope_{*stats_.rootScope()};
   FluentdTracerCacheSharedPtr cache_;
-  NiceMock<ThreadLocal::MockInstance> thread_local_slot_allocator_;
+  ThreadLocal::SlotAllocator& thread_local_slot_allocator_;
 };
 
 TEST_F(FluentdTracerTest, InitializeDriverValidConfig) {
   setupValidDriver();
   EXPECT_NE(nullptr, driver_);
 }
-/*
 
-TEST_F(FluentdTracerTest, NoOpMode) {
-  // Verify that when the tracer fails to validate its configuration,
-  // `startSpan` subsequently returns `NullSpan` instances.
-  envoy::config::trace::v3::FluentdConfig config;
-  config.set_service("envoy");
-  config.set_report_traces(false);
-  config.set_report_telemetry(false);
-  envoy::config::trace::v3::TraceSamplerConfig::Rule invalid_rule;
-  // The `sample_rate`, below, is invalid (should be between 0.0 and 1.0).
-  // As a result, the constructor of `Tracer` will fail to initialize the
-  // underlying `datadog::tracing::Tracer`, and instead go into a no-op mode
-  // where `startSpan` returns `NullSpan` instances.
-  invalid_rule.set_sample_rate(-10);
-  config.mutable_trace_sampler()->add_rules()->CopyFrom(invalid_rule);
-
-  // Initialize DriverSharedPtr using the definition in config.cc
-  FluentdTracerFactory factory;
-  auto driver = factory.createTracerDriverTyped(config, context_);
-
-  Tracing::TestTraceContextImpl context{};
-  // Any values will do for the sake of this test.
-  Tracing::Decision decision;
-  decision.set_reason(Tracing::Reason::Sampling);
-  decision.set_traced(true);
-
-  const std::string operation_name = "do.thing";
-  const SystemTime start = time_.timeSystem().systemTime();
-  ON_CALL(stream_info_, startTime()).WillByDefault(testing::Return(start));
-
-  const Tracing::SpanPtr span =
-      driver->startSpan(Tracing::MockConfig{}, context, stream_info_, operation_name, decision);
-  ASSERT_TRUE(span);
-  const auto as_null_span = dynamic_cast<Tracing::NullSpan*>(span.get());
-  EXPECT_NE(nullptr, as_null_span);
-}
-
-TEST_F(FluentdTracerTest, SpanProperties) {
-  // Verify that span-affecting parameters to `startSpan` are reflected in the
-  // resulting span.
-  envoy::config::trace::v3::FluentdConfig config;
-  config.set_service("envoy");
-  config.set_report_traces(false);
-  config.set_report_telemetry(false);
-  // Configure the tracer to keep all spans. We then override that
-  // configuration in the `Tracing::Decision`, below.
-  config.mutable_trace_sampler()->set_sample_rate(1.0); // 100%
-
-  Tracer tracer("fake_cluster", "test_host", config, cluster_manager_, *store_.rootScope(),
-                thread_local_slot_allocator_, time_);
-
-  Tracing::TestTraceContextImpl context{};
-  // Any values will do for the sake of this test.
-  Tracing::Decision decision;
-  decision.set_reason(Tracing::Reason::Sampling);
-  decision.set_traced(true);
-
-  const std::string operation_name = "do.thing";
-  const SystemTime start = time_.timeSystem().systemTime();
-  ON_CALL(stream_info_, startTime()).WillByDefault(testing::Return(start));
-
-  const Tracing::SpanPtr span =
-      tracer.startSpan(Tracing::MockConfig{}, context, stream_info_, operation_name, decision);
-  ASSERT_TRUE(span);
-  const auto as_dd_span_wrapper = dynamic_cast<Span*>(span.get());
-  EXPECT_NE(nullptr, as_dd_span_wrapper);
-
-  const datadog::tracing::Optional<datadog::tracing::Span>& maybe_dd_span =
-      as_dd_span_wrapper->impl();
-  ASSERT_TRUE(maybe_dd_span);
-  const datadog::tracing::Span& dd_span = *maybe_dd_span;
-
-  // Verify that the span has the expected service name, operation name,
-  // resource name, start time, and sampling decision.
-  // Note that the `operation_name` we specified above becomes the
-  // `resource_name()` of the resulting Datadog span, while the Datadog span's
-  // `name()` (operation name) is hard-coded to "envoy.proxy."
-  EXPECT_EQ("envoy.proxy", dd_span.name());
-  EXPECT_EQ("do.thing", dd_span.resource_name());
-  EXPECT_EQ("envoy", dd_span.service_name());
-  ASSERT_TRUE(dd_span.trace_segment().sampling_decision());
-  EXPECT_EQ(int(datadog::tracing::SamplingPriority::USER_DROP),
-            dd_span.trace_segment().sampling_decision()->priority);
-  EXPECT_EQ(start, dd_span.start_time().wall);
-}
-
-TEST_F(FluentdTracerTest, ExtractionSuccess) {
-  // Verify that if there is trace information to extract from the
-  // `TraceContext` supplied to `startSpan`, that the resulting span is part of
-  // the extracted trace.
-  envoy::config::trace::v3::FluentdConfig config;
-  config.set_service("envoy");
-  config.set_report_traces(false);
-  config.set_report_telemetry(false);
-
-  Tracer tracer("fake_cluster", "test_host", config, cluster_manager_, *store_.rootScope(),
-                thread_local_slot_allocator_, time_);
-
-  // Any values will do for the sake of this test.
-  Tracing::Decision decision;
-  decision.set_reason(Tracing::Reason::Sampling);
-  decision.set_traced(true);
-
-  const std::string operation_name = "do.thing";
-  const SystemTime start = time_.timeSystem().systemTime();
-  ON_CALL(stream_info_, startTime()).WillByDefault(testing::Return(start));
-
-  // trace context in the Datadog style
-  Tracing::TestTraceContextImpl context{{"x-datadog-trace-id", "1234"},
-                                        {"x-datadog-parent-id", "5678"}};
-
-  const Tracing::SpanPtr span =
-      tracer.startSpan(Tracing::MockConfig{}, context, stream_info_, operation_name, decision);
-  ASSERT_TRUE(span);
-  const auto as_dd_span_wrapper = dynamic_cast<Span*>(span.get());
-  EXPECT_NE(nullptr, as_dd_span_wrapper);
-
-  const datadog::tracing::Optional<datadog::tracing::Span>& maybe_dd_span =
-      as_dd_span_wrapper->impl();
-  ASSERT_TRUE(maybe_dd_span);
-  const datadog::tracing::Span& dd_span = *maybe_dd_span;
-
-  EXPECT_EQ(1234, dd_span.trace_id().low);
-  ASSERT_TRUE(dd_span.parent_id());
-  EXPECT_EQ(5678, *dd_span.parent_id());
-}
-
-TEST_F(FluentdTracerTest, ExtractionFailure) {
-  // Verify that if there is invalid trace information in the `TraceContext`
-  // supplied to `startSpan`, that the resulting span is nonetheless valid (it
-  // will be the start of a new trace).
-  envoy::config::trace::v3::FluentdConfig config;
-  config.set_service("envoy");
-  config.set_report_traces(false);
-  config.set_report_telemetry(false);
-
-  Tracer tracer("fake_cluster", "test_host", config, cluster_manager_, *store_.rootScope(),
-                thread_local_slot_allocator_, time_);
-
-  // Any values will do for the sake of this test.
-  Tracing::Decision decision;
-  decision.set_reason(Tracing::Reason::Sampling);
-  decision.set_traced(true);
-
-  const std::string operation_name = "do.thing";
-  const SystemTime start = time_.timeSystem().systemTime();
-  ON_CALL(stream_info_, startTime()).WillByDefault(testing::Return(start));
-
-  // invalid trace context in the Datadog style
-  Tracing::TestTraceContextImpl context{{"x-datadog-trace-id", "nope"},
-                                        {"x-datadog-parent-id", "nice try"}};
-
-  const Tracing::SpanPtr span =
-      tracer.startSpan(Tracing::MockConfig{}, context, stream_info_, operation_name, decision);
-  ASSERT_TRUE(span);
-  const auto as_dd_span_wrapper = dynamic_cast<Span*>(span.get());
-  EXPECT_NE(nullptr, as_dd_span_wrapper);
-
-  const datadog::tracing::Optional<datadog::tracing::Span>& maybe_dd_span =
-      as_dd_span_wrapper->impl();
-  ASSERT_TRUE(maybe_dd_span);
-}
-*/
 
 } // namespace Fluentd
 } // namespace Tracers

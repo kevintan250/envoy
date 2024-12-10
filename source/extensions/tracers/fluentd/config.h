@@ -20,7 +20,7 @@ public:
 
   static FluentdTracerCacheSharedPtr getTracerCacheSingleton(Server::Configuration::ServerFactoryContext& context);
 
-//private:
+private:
   // FactoryBase
   Tracing::DriverSharedPtr
   createTracerDriverTyped(const envoy::config::trace::v3::FluentdConfig& proto_config,

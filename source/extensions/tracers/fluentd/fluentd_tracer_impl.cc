@@ -59,6 +59,7 @@ FluentdTracerImpl::FluentdTracerImpl(Upstream::ThreadLocalCluster& cluster,
           PROTOBUF_GET_WRAPPED_OR_DEFAULT(config, buffer_size_bytes, DefaultMaxBufferSize)),
       retry_timer_(dispatcher.createTimer([this]() -> void { onBackoffCallback(); })),
       flush_timer_(dispatcher.createTimer([this]() {
+        ENVOY_LOG(info, "Flushing buffer due to timeout, entries: {}", entries_.size());
         flush();
         flush_timer_->enableTimer(buffer_flush_interval_msec_);
       })),
@@ -66,6 +67,9 @@ FluentdTracerImpl::FluentdTracerImpl(Upstream::ThreadLocalCluster& cluster,
 
   client_->setAsyncTcpClientCallbacks(*this);
   flush_timer_->enableTimer(buffer_flush_interval_msec_);
+
+  ENVOY_LOG(info, "Fluentd tracer initialized with buffer size {} bytes, flush interval {} ms",
+            max_buffer_size_bytes_, buffer_flush_interval_msec_.count());
 }
 
 // make a span object
@@ -100,7 +104,6 @@ void Span::finishSpan() {
   uint64_t time = std::chrono::duration_cast<std::chrono::seconds>(
                     std::chrono::system_clock::now().time_since_epoch())
                     .count();
-
 
   // make the record map
   std::map<std::string, std::string> record_map;
@@ -196,11 +199,23 @@ void FluentdTracerImpl::trace(EntryPtr&& entry) {
   if (disconnected_ || approximate_message_size_bytes_ >= max_buffer_size_bytes_) {
     fluentd_stats_.entries_lost_.inc();
     // We will lose the data deliberately so the buffer doesn't grow infinitely.
+    ENVOY_LOG(info, "Fluentd tracer buffer full, dropping log entry");
     return;
   }
 
+  // stringify the entry
+  std::string record_str = "";
+  record_str += "time: " + std::to_string(entry->time_) + ", ";
+  for (const auto& pair : entry->record_) {
+    record_str += pair.first + ": " + pair.second + ", ";
+  }
+  //ENVOY_LOG(info, "Fluentd tracer entry: {}", record_str);
+
+  //ENVOY_LOG(info, "Fluentd tracer entry time: {}", entry->time_);
   approximate_message_size_bytes_ += sizeof(entry->time_) + entry->record_.size();
   entries_.push_back(std::move(entry));
+  //ENVOY_LOG(info, "Fluentd tracer entry added to buffer, buffer count: {}, buffer size: {}", entries_.size(), approximate_message_size_bytes_);
+
   fluentd_stats_.entries_buffered_.inc();
   if (approximate_message_size_bytes_ >= max_buffer_size_bytes_) {
     // If we exceeded the buffer limit, immediately flush the logs instead of waiting for
@@ -211,14 +226,24 @@ void FluentdTracerImpl::trace(EntryPtr&& entry) {
 
 void FluentdTracerImpl::flush() {
   ASSERT(!disconnected_);
+  
+  ENVOY_LOG(info, "Fluentd tracer flush, buffer count: {}, buffer size: {}", entries_.size(), approximate_message_size_bytes_);
 
-  if (entries_.empty() || connecting_) {
+  if (entries_.empty()) {
     // nothing to send, or we're still waiting for an upstream connection.
+    //ENVOY_LOG(info, "Fluentd tracer flush skipped, no entries");
+    return;
+  }
+
+  if (connecting_) {
+    // nothing to send, or we're still waiting for an upstream connection.
+    ENVOY_LOG(info, "Fluentd tracer flush skipped, still connecting");
     return;
   }
 
   if (!client_->connected()) {
     connect();
+    ENVOY_LOG(info, "Fluentd tracer flush skipped, not connected");
     return;
   }
 
@@ -246,6 +271,10 @@ void FluentdTracerImpl::flush() {
   }  
   
   packer.pack(option_);
+
+  if (entries_.size() > 0) {
+    ENVOY_LOG(info, "Fluentd tracer flushed {} entries", entries_.size());
+  }
 
   Buffer::OwnedImpl data(buffer.data(), buffer.size());    
   client_->write(data, false);
@@ -283,6 +312,7 @@ void FluentdTracerImpl::onBackoffCallback() {
 }
 
 void FluentdTracerImpl::setDisconnected() {
+  ENVOY_LOG(info, "fluentd_tracer: set disconnected");
   disconnected_ = true;
   clearBuffer();
   ASSERT(flush_timer_ != nullptr);
@@ -290,6 +320,7 @@ void FluentdTracerImpl::setDisconnected() {
 }
 
 void FluentdTracerImpl::clearBuffer() {
+  ENVOY_LOG(info, "fluentd_tracer: clear buffer");
   entries_.clear();
   approximate_message_size_bytes_ = 0;
 }
