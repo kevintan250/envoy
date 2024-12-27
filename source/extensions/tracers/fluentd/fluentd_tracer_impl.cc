@@ -282,8 +282,7 @@ std::string Span::getTraceId() const { return span_context_.traceId(); }
 
 std::string Span::getSpanId() const { return span_context_.spanId(); }
 
-Tracing::SpanPtr FluentdTracerImpl::startSpan(
-                                              Tracing::TraceContext& trace_context,
+Tracing::SpanPtr FluentdTracerImpl::startSpan(Tracing::TraceContext& trace_context,
                                               SystemTime start_time,
                                               const std::string& operation_name,
                                               Tracing::Decision tracing_decision) {
@@ -294,19 +293,17 @@ Tracing::SpanPtr FluentdTracerImpl::startSpan(
 
   uint64_t span_id = random_.random();
 
-  SpanContext span_context = SpanContext(kDefaultVersion, absl::StrCat(Hex::uint64ToHex(trace_id_high), Hex::uint64ToHex(trace_id)), Hex::uint64ToHex(span_id), "", tracing_decision.traced);
+  SpanContext span_context = SpanContext(kDefaultVersion, absl::StrCat(Hex::uint64ToHex(trace_id_high), Hex::uint64ToHex(trace_id)), Hex::uint64ToHex(span_id), tracing_decision.traced, "");
  
   return std::make_unique<Span>(trace_context, start_time, operation_name, tracing_decision, shared_from_this(), span_context);
 }
 
-Tracing::SpanPtr FluentdTracerImpl::startSpan(
-                                              Tracing::TraceContext& trace_context,
+Tracing::SpanPtr FluentdTracerImpl::startSpan(Tracing::TraceContext& trace_context,
                                               SystemTime start_time,
                                               const std::string& operation_name,
-                                              Tracing::Decision tracing_decision, 
-                                              SystemTime start_time, const SpanContext&previous_span_context) {
+                                              Tracing::Decision tracing_decision, const SpanContext&previous_span_context) {
 
-  SpanContext span_context = SpanContext(kDefaultVersion, previous_span_context.traceId(), Hex::uint64ToHex(random_.random()), "", tracing_decision.traced);
+  SpanContext span_context = SpanContext(kDefaultVersion, previous_span_context.traceId(), Hex::uint64ToHex(random_.random()), previous_span_context.sampled(), previous_span_context.tracestate());
 
   return std::make_unique<Span>(trace_context, start_time, operation_name, tracing_decision, shared_from_this(), span_context);
 }

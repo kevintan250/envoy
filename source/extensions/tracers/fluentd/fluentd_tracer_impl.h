@@ -129,7 +129,7 @@ public:
   Tracing::SpanPtr startSpan(Tracing::TraceContext& trace_context,
                              SystemTime start_time,
                              const std::string& operation_name,
-                             Tracing::Decision tracing_decision) override;
+                             Tracing::Decision tracing_decision);
 
   Tracing::SpanPtr startSpan(Tracing::TraceContext& trace_context, SystemTime start_time,
                              const std::string& operation_name,
