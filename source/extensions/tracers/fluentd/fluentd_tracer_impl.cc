@@ -246,8 +246,8 @@ void Span::finishSpan() {
 void Span::injectContext(Tracing::TraceContext& trace_context,
                          const Tracing::UpstreamContext& upstream) {
   
-  std::string trace_id_hex = absl::BytesToHexString(span_context_.traceId());
-  std::string parent_id_hex = absl::BytesToHexString(span_context_.parentId());
+  std::string trace_id_hex = span_context_.traceId();
+  std::string parent_id_hex = span_context_.parentId();
   std::vector<uint8_t> trace_flags_vec{sampled()};
   std::string trace_flags_hex = Hex::encode(trace_flags_vec);
   std::string traceparent_header_value = absl::StrCat(kDefaultVersion, "-", trace_id_hex, "-", parent_id_hex, "-", trace_flags_hex);

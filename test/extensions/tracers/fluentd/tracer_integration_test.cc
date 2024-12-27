@@ -103,6 +103,22 @@ TEST_F(FluentdTracerIntegrationTest, ParseSpanContextFromHeadersTest) {
     ASSERT_TRUE(span);
     EXPECT_EQ(span->getTraceId(), trace_id_hex);
     EXPECT_EQ(span->getSpanId(), Hex::uint64ToHex(new_span_id));
+
+    // Remove headers, then inject context into header from the span.
+    trace_context.remove(FluentdConstants::get().TRACE_PARENT.key());
+    trace_context.remove(FluentdConstants::get().TRACE_STATE.key());
+
+    span->injectContext(trace_context, Tracing::UpstreamContext());
+
+    auto sampled_entry = trace_context.get(FluentdConstants::get().TRACE_PARENT.key());
+    EXPECT_TRUE(sampled_entry.has_value());
+    EXPECT_EQ(sampled_entry.value(), absl::StrJoin({version, trace_id_hex, Hex::uint64ToHex(new_span_id), trace_flags}, "-"));
+
+    auto sampled_tracestate_entry = trace_context.get(FluentdConstants::get().TRACE_STATE.key());
+    EXPECT_TRUE(sampled_tracestate_entry.has_value());
+    EXPECT_EQ(sampled_tracestate_entry.value(), "test=foo");
+
+
 }
 
 
