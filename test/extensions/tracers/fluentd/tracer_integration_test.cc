@@ -52,6 +52,7 @@ protected:
     NiceMock<Envoy::Tcp::AsyncClient::MockAsyncTcpClient> client_;
     NiceMock<Envoy::Event::MockDispatcher> dispatcher_;
     FluentdConfig config_;
+      NiceMock<Envoy::Tracing::MockConfig> mock_tracing_config_;
 };
 
 TEST_F(FluentdTracerIntegrationTest, Breathing) {
@@ -188,8 +189,32 @@ TEST_F(FluentdTracerIntegrationTest, GenerateSpanContextWithoutHeadersTest) {
     EXPECT_EQ(sampled_entry.value(), "00-00000000000000010000000000000002-0000000000000003-01");
 }
 
-TEST_F(FluentdTracerIntegrationTest, NullSpanWithPropagationHeaderError) {
+TEST_F(FluentdTracerIntegrationTest, NullSpanWithPropagationHeaderError) {    
+    // Add an invalid OTLP header to the request headers.
+    Tracing::TestTraceContextImpl trace_context{
+        {":authority", "test.com"}, {":path", "/"}, {":method", "GET"}};
+    trace_context.set(FluentdConstants::get().TRACE_PARENT.key(), "invalid00-0000000000000003-01");
+
+    SpanContextExtractor extractor(trace_context);
+
+    EXPECT_TRUE(extractor.propagationHeaderPresent());
+    EXPECT_FALSE(extractor.extractSpanContext().ok());
+}
+
+TEST_F(FluentdTracerIntegrationTest, SpawnChildSpan) {
     auto* cluster = cluster_manager_.getThreadLocalCluster("fake_cluster");
+
+    // Mock the random call for generating trace and span IDs so we can check it later.
+    const uint64_t trace_id_high = 0;
+    const uint64_t trace_id_low = 2;
+    const uint64_t new_span_id = 3;
+    {
+        testing::InSequence s;
+
+        EXPECT_CALL(random_, random()).WillOnce(testing::Return(trace_id_high));
+        EXPECT_CALL(random_, random()).WillOnce(testing::Return(trace_id_low));
+        EXPECT_CALL(random_, random()).WillOnce(testing::Return(new_span_id));
+    }
 
     auto client = std::make_unique<NiceMock<Envoy::Tcp::AsyncClient::MockAsyncTcpClient>>();
     auto backoff_strategy = std::make_unique<JitteredExponentialBackOffStrategy>(1000, 10000, random_);
@@ -200,10 +225,8 @@ TEST_F(FluentdTracerIntegrationTest, NullSpanWithPropagationHeaderError) {
 
     EXPECT_NE(nullptr, tracer_);
     
-    // Add an invalid OTLP header to the request headers.
     Tracing::TestTraceContextImpl trace_context{
         {":authority", "test.com"}, {":path", "/"}, {":method", "GET"}};
-    trace_context.set(FluentdConstants::get().TRACE_PARENT.key(), "invalid00-0000000000000003-01");
 
     Tracing::Decision decision = {Tracing::Reason::Sampling, true};
 
@@ -219,19 +242,21 @@ TEST_F(FluentdTracerIntegrationTest, NullSpanWithPropagationHeaderError) {
     
     auto span = as_fluentd_tracer->startSpan(trace_context, start, operation_name, decision);
 
-    auto& null_span = *span;
-    EXPECT_EQ(typeid(null_span).name(), typeid(Tracing::NullSpan).name());
+    EXPECT_NE(span.get(), nullptr);
+    EXPECT_EQ(span->getTraceId(), Hex::uint64ToHex(trace_id_high) + Hex::uint64ToHex(trace_id_low));
+    EXPECT_EQ(span->getSpanId(), Hex::uint64ToHex(new_span_id));
+
+    // The child should only generate a span ID for itself; the trace id should come from the parent.
+    const uint64_t child_span_id = 3;
+    EXPECT_CALL(random_, random()).WillOnce(testing::Return(child_span_id));
+    auto child_span = span->spawnChild(mock_tracing_config_, operation_name, time_.timeSystem().systemTime());
+
+    EXPECT_EQ(child_span->getTraceId(), Hex::uint64ToHex(trace_id_high) + Hex::uint64ToHex(trace_id_low));
+    EXPECT_EQ(child_span->getSpanId(), Hex::uint64ToHex(child_span_id));
 }
 
 } // namespace Fluentd
 } // namespace Tracers
 } // namespace Extensions
 } // namespace Envoy
-
-
-
-} // namespace Fluentd
-} // namespace Tracers
-} // namespace Extensions
-}
 
