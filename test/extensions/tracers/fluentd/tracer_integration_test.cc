@@ -25,11 +25,26 @@ public:
         cluster_manager_.initializeClusters({"fake_cluster"}, {});
         cluster_manager_.thread_local_cluster_.cluster_.info_->name_ = "fake_cluster";
         cluster_manager_.initializeThreadLocalClusters({"fake_cluster"});
+
+        const std::string yaml_json = R"EOF(
+        cluster: "fake_cluster"
+        tag: "fake_tag"
+        stat_prefix: "envoy.tracers.fluentd"
+        buffer_flush_interval: 1s
+        buffer_size_bytes: 16384
+        retry_options:
+            max_connect_attempts: 1024
+            backoff_options:
+                base_interval: 0.5s
+                max_interval: 5s
+        )EOF";
+        TestUtility::loadFromYaml(yaml_json, config_);
     }
 
 protected:
     NiceMock<Upstream::MockClusterManager> cluster_manager_;
-    Stats::TestUtil::TestStore store_;
+    NiceMock<Stats::MockIsolatedStatsStore> stats_;
+    Stats::Scope& scope_{*stats_.rootScope()};
     NiceMock<ThreadLocal::MockInstance> thread_local_slot_allocator_;
     Event::SimulatedTimeSystem time_;
     NiceMock<StreamInfo::MockStreamInfo> stream_info_;
@@ -44,7 +59,7 @@ TEST_F(FluentdTracerIntegrationTest, Breathing) {
 
     auto tracer_ = std::make_unique<FluentdTracerImpl>(
         *cluster, std::make_unique<NiceMock<Envoy::Tcp::AsyncClient::MockAsyncTcpClient>>(), dispatcher_, config_,
-        std::make_unique<JitteredExponentialBackOffStrategy>(1000, 10000, random_), *store_.rootScope(), random_);
+        std::make_unique<JitteredExponentialBackOffStrategy>(1000, 10000, random_), scope_, random_);
 
     EXPECT_NE(nullptr, tracer_);
 }
@@ -61,7 +76,7 @@ TEST_F(FluentdTracerIntegrationTest, ParseSpanContextFromHeadersTest) {
 
     const auto tracer_ = std::make_shared<FluentdTracerImpl>(
         *cluster, std::move(client), dispatcher_, config_,
-        std::move(backoff_strategy), *store_.rootScope(), random_);
+        std::move(backoff_strategy), scope_, random_);
 
     EXPECT_NE(nullptr, tracer_);
     
@@ -120,7 +135,7 @@ TEST_F(FluentdTracerIntegrationTest, ParseSpanContextFromHeadersTest) {
 
     // Finish the span
     span->finishSpan();
-    EXPECT_EQ(1U, store_.counter("tracing.fluentd.events_sent").value());
+    EXPECT_EQ(1U, stats_.counter("envoy.tracers.fluentd.entries_buffered").value());
 }
 
 

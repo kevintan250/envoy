@@ -466,7 +466,7 @@ void FluentdTracerImpl::clearBuffer() {
 FluentdTracerCacheImpl::FluentdTracerCacheImpl(Upstream::ClusterManager& cluster_manager,
                                                Stats::Scope& parent_scope,
                                                ThreadLocal::SlotAllocator& tls)
-    : cluster_manager_(cluster_manager), stats_scope_(parent_scope.createScope("traces.fluentd")),
+    : cluster_manager_(cluster_manager), stats_scope_(parent_scope.createScope("tracing.fluentd")),
       tls_slot_(tls.allocateSlot()) {
   tls_slot_->set(
       [](Event::Dispatcher& dispatcher) { return std::make_shared<ThreadLocalCache>(dispatcher); });

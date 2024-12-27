@@ -58,7 +58,7 @@ TEST(FluentdTracerConfigTest, FluentdTracerFullConfig) {
           retry_options:
             max_connect_attempts: 1024
             backoff_options:
-              base_interval: 500ms
+              base_interval: 0.5s
               max_interval: 5s
     )EOF";
     envoy::config::trace::v3::Tracing configuration;
