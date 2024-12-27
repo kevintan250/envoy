@@ -1,5 +1,6 @@
 #include "source/extensions/tracers/fluentd/fluentd_tracer_impl.h"
 
+#include "fluentd_tracer_impl.h"
 #include "source/common/buffer/buffer_impl.h"
 #include "source/common/common/backoff_strategy.h"
 #include "source/common/tracing/trace_context_impl.h"
@@ -15,6 +16,107 @@ namespace Fluentd {
 
 using MessagePackBuffer = msgpack::sbuffer;
 using MessagePackPacker = msgpack::packer<msgpack::sbuffer>;
+
+// See https://www.w3.org/TR/trace-context/#traceparent-header
+constexpr int kTraceparentHeaderSize = 55; // 2 + 1 + 32 + 1 + 16 + 1 + 2
+constexpr int kVersionHexSize = 2;
+constexpr int kTraceIdHexSize = 32;
+constexpr int kParentIdHexSize = 16;
+constexpr int kTraceFlagsHexSize = 2;
+
+bool isValidHex(const absl::string_view& input) {
+  return std::all_of(input.begin(), input.end(),
+                     [](const char& c) { return absl::ascii_isxdigit(c); });
+}
+
+bool isAllZeros(const absl::string_view& input) {
+  return std::all_of(input.begin(), input.end(), [](const char& c) { return c == '0'; });
+}
+
+SpanContextExtractor::SpanContextExtractor(Tracing::TraceContext& trace_context)
+    : trace_context_(trace_context) {}
+
+SpanContextExtractor::~SpanContextExtractor() = default;
+
+bool SpanContextExtractor::propagationHeaderPresent() {
+  auto propagation_header = FluentdConstants::get().TRACE_PARENT.get(trace_context_);
+  return propagation_header.has_value();
+}
+
+absl::StatusOr<SpanContext> SpanContextExtractor::extractSpanContext() {
+  auto propagation_header = FluentdConstants::get().TRACE_PARENT.get(trace_context_);
+  if (!propagation_header.has_value()) {
+    // We should have already caught this, but just in case.
+    return absl::InvalidArgumentError("No propagation header found");
+  }
+  auto header_value_string = propagation_header.value();
+
+  if (header_value_string.size() != kTraceparentHeaderSize) {
+    return absl::InvalidArgumentError("Invalid traceparent header length");
+  }
+  // Try to split it into its component parts:
+  std::vector<absl::string_view> propagation_header_components =
+      absl::StrSplit(header_value_string, '-', absl::SkipEmpty());
+  if (propagation_header_components.size() != 4) {
+    return absl::InvalidArgumentError("Invalid traceparent hyphenation");
+  }
+  absl::string_view version = propagation_header_components[0];
+  absl::string_view trace_id = propagation_header_components[1];
+  absl::string_view parent_id = propagation_header_components[2];
+  absl::string_view trace_flags = propagation_header_components[3];
+  if (version.size() != kVersionHexSize || trace_id.size() != kTraceIdHexSize ||
+      parent_id.size() != kParentIdHexSize || trace_flags.size() != kTraceFlagsHexSize) {
+    return absl::InvalidArgumentError("Invalid traceparent field sizes");
+  }
+  if (!isValidHex(version) || !isValidHex(trace_id) || !isValidHex(parent_id) ||
+      !isValidHex(trace_flags)) {
+    return absl::InvalidArgumentError("Invalid header hex");
+  }
+  // As per the traceparent header definition, if the trace-id or parent-id are all zeros, they are
+  // invalid and must be ignored.
+  if (isAllZeros(trace_id)) {
+    return absl::InvalidArgumentError("Invalid trace id");
+  }
+  if (isAllZeros(parent_id)) {
+    return absl::InvalidArgumentError("Invalid parent id");
+  }
+
+  // Set whether or not the span is sampled from the trace flags.
+  // See https://w3c.github.io/trace-context/#trace-flags.
+  char decoded_trace_flags = absl::HexStringToBytes(trace_flags).front();
+  bool sampled = (decoded_trace_flags & 1);
+
+  // If a tracestate header is received without an accompanying traceparent header,
+  // it is invalid and MUST be discarded. Because we're already checking for the
+  // traceparent header above, we don't need to check here.
+  // See https://www.w3.org/TR/trace-context/#processing-model-for-working-with-trace-context
+  absl::string_view tracestate_key = FluentdConstants::get().TRACE_STATE.key();
+  std::vector<std::string> tracestate_values;
+  // Multiple tracestate header fields MUST be handled as specified by RFC7230 Section 3.2.2 Field
+  // Order.
+  trace_context_.forEach(
+      [&tracestate_key, &tracestate_values](absl::string_view key, absl::string_view value) {
+        if (key == tracestate_key) {
+          tracestate_values.push_back(std::string{value});
+        }
+        return true;
+      });
+  std::string tracestate = absl::StrJoin(tracestate_values, ",");
+
+  SpanContext span_context(version, trace_id, parent_id, sampled, tracestate);
+  return span_context;
+}
+
+
+constexpr absl::string_view kDefaultVersion = "00";
+
+const Tracing::TraceContextHandler& traceParentHeader() {
+  CONSTRUCT_ON_FIRST_USE(Tracing::TraceContextHandler, "traceparent");
+}
+
+const Tracing::TraceContextHandler& traceStateHeader() {
+  CONSTRUCT_ON_FIRST_USE(Tracing::TraceContextHandler, "tracestate");
+}
 
 Driver::Driver(const FluentdConfigSharedPtr fluentd_config,
                Server::Configuration::TracerFactoryContext& context, FluentdTracerCacheSharedPtr tracer_cache)
@@ -35,7 +137,24 @@ Tracing::SpanPtr Driver::startSpan(const Tracing::Config& config,
                                    Tracing::Decision tracing_decision) {
   auto& tracer = tls_slot_->getTyped<ThreadLocalTracer>().tracer();
 
-  return tracer.startSpan(config, trace_context, stream_info, operation_name, tracing_decision);
+  SpanContextExtractor extractor(trace_context);
+  if (!extractor.propagationHeaderPresent()) {
+    // No propagation header, so we can create a fresh span with the given decision.
+
+    return tracer.startSpan(trace_context, stream_info.startTime(), operation_name, tracing_decision);
+  }
+  else {
+    // Try to extract the span context. If we can't, just return a null span.
+    absl::StatusOr<SpanContext> span_context = extractor.extractSpanContext();
+    if (span_context.ok()) {
+      
+      return tracer.startSpan(trace_context, stream_info.startTime(), operation_name, tracing_decision, span_context.value());
+        
+    } else {
+      ENVOY_LOG(trace, "Unable to extract span context: ", span_context.status());
+      return std::make_unique<Tracing::NullSpan>();
+    }
+  }
 }
 
 FluentdTracerImpl::FluentdTracerImpl(Upstream::ThreadLocalCluster& cluster,
@@ -73,10 +192,9 @@ FluentdTracerImpl::FluentdTracerImpl(Upstream::ThreadLocalCluster& cluster,
 }
 
 // make a span object
-Span::Span(const Tracing::Config& config, Tracing::TraceContext& trace_context,
-           const StreamInfo::StreamInfo& stream_info, const std::string& operation_name,
+Span::Span(Tracing::TraceContext& trace_context, SystemTime start_time, const std::string& operation_name,
            Tracing::Decision tracing_decision, FluentdTracerSharedPtr tracer, const SpanContext& span_context)
-    : trace_context_(trace_context), stream_info_(stream_info), operation_(operation_name),
+    : trace_context_(trace_context), start_time_(start_time), operation_(operation_name),
       tracing_decision_(tracing_decision), tracer_(tracer), span_context_(span_context) {}
 
 
@@ -127,17 +245,24 @@ void Span::finishSpan() {
 
 void Span::injectContext(Tracing::TraceContext& trace_context,
                          const Tracing::UpstreamContext& upstream) {
-  trace_context.set("TraceId", span_context_.traceId());
-  trace_context.set("SpanId", span_context_.spanId());
-  trace_context.set("Sampled", span_context_.sampled() ? "1" : "0");
-  trace_context.set("StartTime", std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
-                                           span_context_.startTime().time_since_epoch())
-                                           .count()));                                     
+  
+  std::string trace_id_hex = absl::BytesToHexString(span_context_.traceId());
+  std::string parent_id_hex = absl::BytesToHexString(span_context_.parentId());
+  std::vector<uint8_t> trace_flags_vec{span_context_.sampled()};
+  strd::string trace_flags_hex = Hex::encode(trace_flags_vec);
+  std::string traceparent_header_value = absl::StrCat(kDefaultVersion, "-", trace_id_hex, "-", parent_id_hex, "-", trace_flags_hex);
+
+  // Set the traceparent in the trace_context.
+  traceParentHeader().setRefKey(trace_context, traceparent_header_value);
+  // Also set the tracestate.
+  traceStateHeader().setRefKey(trace_context, span_context.tracestate());                               
 }
 
-Tracing::SpanPtr Span::spawnChild(const Tracing::Config& config, const std::string& name,
+Tracing::SpanPtr Span::spawnChild(const Tracing::Config&, const std::string& name,
                                   SystemTime start_time) {
-  return tracer_->startSpan(config, trace_context_, stream_info_, name, tracing_decision_, start_time, span_context_);
+
+                                    // TODO: check if a new span_context_ needs to be built
+  return tracer_->startSpan(trace_context_, start_time, name, tracing_decision_, span_context_);
 }
 
 void Span::setSampled(bool sampled) {
@@ -157,27 +282,33 @@ std::string Span::getTraceId() const { return span_context_.traceId(); }
 
 std::string Span::getSpanId() const { return span_context_.spanId(); }
 
-Tracing::SpanPtr FluentdTracerImpl::startSpan(const Tracing::Config& config,
+Tracing::SpanPtr FluentdTracerImpl::startSpan(
                                               Tracing::TraceContext& trace_context,
-                                              const StreamInfo::StreamInfo& stream_info,
+                                              SystemTime start_time,
                                               const std::string& operation_name,
                                               Tracing::Decision tracing_decision) {
-  // make a new span context
-  SpanContext span_context = SpanContext(Hex::uint64ToHex(random_.random()), Hex::uint64ToHex(random_.random()), "", tracing_decision.traced, stream_info.startTime());  
 
-  return std::make_unique<Span>(config, trace_context, stream_info, operation_name, tracing_decision, shared_from_this(), span_context);
+  // make a new span context
+  uint64_t trace_id_high = random_.random();
+  uint64_t trace_id = random_.random();
+
+  uint64_t span_id = random_.random();
+
+  SpanContext span_context = SpanContext(kDefaultVersion, absl::StrCat(Hex::uint64ToHex(trace_id_high), Hex::uint64ToHex(trace_id)), Hex::uint64ToHex(span_id), "", tracing_decision.traced);
+ 
+  return std::make_unique<Span>(trace_context, start_time, operation_name, tracing_decision, shared_from_this(), span_context);
 }
 
-Tracing::SpanPtr FluentdTracerImpl::startSpan(const Tracing::Config& config,
+Tracing::SpanPtr FluentdTracerImpl::startSpan(
                                               Tracing::TraceContext& trace_context,
-                                              const StreamInfo::StreamInfo& stream_info,
+                                              SystemTime start_time,
                                               const std::string& operation_name,
                                               Tracing::Decision tracing_decision, 
                                               SystemTime start_time, const SpanContext&previous_span_context) {
 
-  SpanContext span_context = SpanContext(previous_span_context.traceId(), Hex::uint64ToHex(random_.random()), previous_span_context.spanId(), tracing_decision.traced, start_time);
+  SpanContext span_context = SpanContext(kDefaultVersion, previous_span_context.traceId(), Hex::uint64ToHex(random_.random()), "", tracing_decision.traced);
 
-  return std::make_unique<Span>(config, trace_context, stream_info, operation_name, tracing_decision, shared_from_this(), span_context);
+  return std::make_unique<Span>(trace_context, start_time, operation_name, tracing_decision, shared_from_this(), span_context);
 }
 
 void FluentdTracerImpl::onEvent(Network::ConnectionEvent event) {

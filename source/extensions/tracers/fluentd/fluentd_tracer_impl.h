@@ -2,12 +2,17 @@
 
 #include <chrono>
 
+#include "absl/strings/string_view.h"
+
 #include "envoy/config/trace/v3/fluentd.pb.h"
 #include "envoy/config/trace/v3/fluentd.pb.validate.h"
 #include "envoy/thread_local/thread_local.h"
 #include "envoy/tracing/trace_driver.h"
 
+#include "source/common/common/statusor.h"
 #include "source/common/common/logger.h"
+#include "source/common/http/header_map_impl.h"
+#include "source/common/tracing/trace_context_impl.h"
 #include "source/extensions/tracers/common/factory_base.h"
 
 namespace Envoy {
@@ -41,27 +46,44 @@ using EntryPtr = std::unique_ptr<Entry>;
 class SpanContext {
   public:
   SpanContext() = default;
-  SpanContext(const absl::string_view& trace_id, const absl::string_view& span_id, const absl::string_view& parent_span_id, bool sampled, std::chrono::system_clock::time_point start_time)
-      : trace_id_(trace_id), span_id_(span_id), parent_span_id_(parent_span_id), sampled_(sampled), start_time_(start_time) {}
+  SpanContext(const absl::string_view& version, const absl::string_view& trace_id, const absl::string_view& parent_id, bool sampled, const absl::string_view& tracestate)
+      : version_(version), trace_id_(trace_id), parent_id_(parent_id), sampled_(sampled), tracestate_(tracestate) {}
   
+  const std::string& version() const { return version_; }
+
   const std::string& traceId() const { return trace_id_; }
 
-  const std::string& spanId() const { return span_id_; }
-
-  const std::string& parentSpanId() const { return parent_span_id_; }
+  const std::string& parentId() const { return parent_id_; }
 
   bool sampled() { return sampled_; }
 
-  const std::chrono::system_clock::time_point& startTime() const { return start_time_; }
-
-  void setSampled(bool sampled) { sampled_ = sampled; }
+  const std::string& tracestate() const { return tracestate_; }
 
 private:
-  std::string trace_id_;
-  std::string span_id_;
-  std::string parent_span_id_;
-  bool sampled_;
-  std::chrono::system_clock::time_point start_time_;
+  const std::string version_;
+  const std::string trace_id_;
+  const std::string parent_id_;
+  const bool sampled_{false};
+  const std::string tracestate_;
+};
+
+class FluentdConstantValues {
+  public:
+  const Tracing::TraceContextHandler TRACE_PARENT{"traceparent"};
+  const Tracing::TraceContextHandler TRACE_STATE{"tracestate"};
+};
+
+using FluentdConstants = ConstSingleton<FluentdConstantValues>;
+
+class SpanContextExtractor {
+public:
+  SpanContextExtractor(Tracing::TraceContext& trace_context);
+  ~SpanContextExtractor();
+  absl::StatusOr<SpanContext> extractSpanContext();
+  bool propagationHeaderPresent();
+
+private:
+  const Tracing::TraceContext& trace_context_;
 };
 
 class FluentdTracer {
@@ -104,14 +126,14 @@ public:
   void onData(Buffer::Instance&, bool) override {}
 
   // Tracing::Driver
-  Tracing::SpanPtr startSpan(const Tracing::Config& config, Tracing::TraceContext& trace_context,
-                             const StreamInfo::StreamInfo& stream_info,
+  Tracing::SpanPtr startSpan(Tracing::TraceContext& trace_context,
+                             SystemTime start_time,
                              const std::string& operation_name,
                              Tracing::Decision tracing_decision) override;
 
-  Tracing::SpanPtr startSpan(const Tracing::Config& config, Tracing::TraceContext& trace_context, const StreamInfo::StreamInfo& stream_info,
+  Tracing::SpanPtr startSpan(Tracing::TraceContext& trace_context, SystemTime start_time,
                              const std::string& operation_name,
-                             Tracing::Decision tracing_decision, SystemTime start_time, const SpanContext& previous_span_context);
+                             Tracing::Decision tracing_decision, const SpanContext& previous_span_context);
 
   // FluentdTracer
   void trace(EntryPtr&& entry) override;
@@ -221,9 +243,8 @@ private:
 
 class Span : public Tracing::Span {
 public:
-  Span(const Tracing::Config& config, Tracing::TraceContext& trace_context,
-       const StreamInfo::StreamInfo& stream_info, const std::string& operation_name,
-       Tracing::Decision tracing_decision, FluentdTracerSharedPtr tracer, const SpanContext& span_context);
+  Span(Tracing::TraceContext& trace_context, SystemTime start_time, const std::string& operation_name,
+           Tracing::Decision tracing_decision, FluentdTracerSharedPtr tracer, const SpanContext& span_context);
 
   // Tracing::Span
   void setOperation(absl::string_view operation) override;
@@ -239,11 +260,11 @@ public:
   void setBaggage(absl::string_view key, absl::string_view value) override;
   std::string getTraceId() const override;
   std::string getSpanId() const override;
-
+ 
 private:
   // config
   Tracing::TraceContext& trace_context_;
-  const StreamInfo::StreamInfo& stream_info_;
+  SystemTime start_time_;
   std::string operation_;
   Tracing::Decision tracing_decision_;
   
