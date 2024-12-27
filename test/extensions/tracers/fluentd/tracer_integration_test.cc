@@ -118,7 +118,9 @@ TEST_F(FluentdTracerIntegrationTest, ParseSpanContextFromHeadersTest) {
     EXPECT_TRUE(sampled_tracestate_entry.has_value());
     EXPECT_EQ(sampled_tracestate_entry.value(), "test=foo");
 
-
+    // Finish the span
+    span->finishSpan();
+    EXPECT_EQ(1U, store_.counter("tracing.fluentd.events_sent").value());
 }
 
 
