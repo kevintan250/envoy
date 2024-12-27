@@ -109,7 +109,6 @@ struct TracerFluentdStats {
 };
 
 class FluentdTracerImpl : public Tcp::AsyncTcpClientCallbacks,
-                          public Tracing::Driver,
                           public FluentdTracer,
                           public std::enable_shared_from_this<FluentdTracerImpl>,
                           public Logger::Loggable<Logger::Id::tracing> {
