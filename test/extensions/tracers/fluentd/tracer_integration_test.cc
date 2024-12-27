@@ -146,11 +146,11 @@ TEST_F(FluentdTracerIntegrationTest, GenerateSpanContextWithoutHeadersTest) {
     const uint64_t trace_id_low = 2;
     const uint64_t new_span_id = 3;
     {
-        InSequence s;
+        testing::InSequence s;
 
-        EXPECT_CALL(random_, random()).WillOnce(Return(trace_id_high));
-        EXPECT_CALL(random_, random()).WillOnce(Return(trace_id_low));
-        EXPECT_CALL(random_, random()).WillOnce(Return(new_span_id));
+        EXPECT_CALL(random_, random()).WillOnce(testing::Return(trace_id_high));
+        EXPECT_CALL(random_, random()).WillOnce(testing::Return(trace_id_low));
+        EXPECT_CALL(random_, random()).WillOnce(testing::Return(new_span_id));
     }
 
     auto client = std::make_unique<NiceMock<Envoy::Tcp::AsyncClient::MockAsyncTcpClient>>();
@@ -165,9 +165,7 @@ TEST_F(FluentdTracerIntegrationTest, GenerateSpanContextWithoutHeadersTest) {
     Tracing::TestTraceContextImpl trace_context{
         {":authority", "test.com"}, {":path", "/"}, {":method", "GET"}};
 
-    Tracing::Decision decision;
-    decision.reason = Tracing::Reason::Sampling;
-    decision.traced = false;
+    Tracing::Decision decision = {Tracing::Reason::Sampling, true};
 
     const std::string operation_name = "do.thing";
     const SystemTime start = time_.timeSystem().systemTime(); 
