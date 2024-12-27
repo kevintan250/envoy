@@ -138,6 +138,58 @@ TEST_F(FluentdTracerIntegrationTest, ParseSpanContextFromHeadersTest) {
     EXPECT_EQ(1U, stats_.counter("envoy.tracers.fluentd.entries_buffered").value());
 }
 
+TEST_F(FluentdTracerIntegrationTest, GenerateSpanContextWithoutHeadersTest) {
+    auto* cluster = cluster_manager_.getThreadLocalCluster("fake_cluster");
+
+    // Mock the random call for generating trace and span IDs so we can check it later.
+    const uint64_t trace_id_high = 1;
+    const uint64_t trace_id_low = 2;
+    const uint64_t new_span_id = 3;
+    {
+        InSequence s;
+
+        EXPECT_CALL(random_, random()).WillOnce(Return(trace_id_high));
+        EXPECT_CALL(random_, random()).WillOnce(Return(trace_id_low));
+        EXPECT_CALL(random_, random()).WillOnce(Return(new_span_id));
+    }
+
+    auto client = std::make_unique<NiceMock<Envoy::Tcp::AsyncClient::MockAsyncTcpClient>>();
+    auto backoff_strategy = std::make_unique<JitteredExponentialBackOffStrategy>(1000, 10000, random_);
+
+    const auto tracer_ = std::make_shared<FluentdTracerImpl>(
+        *cluster, std::move(client), dispatcher_, config_,
+        std::move(backoff_strategy), scope_, random_);
+
+    EXPECT_NE(nullptr, tracer_);
+    
+    Tracing::TestTraceContextImpl trace_context{
+        {":authority", "test.com"}, {":path", "/"}, {":method", "GET"}};
+
+    Tracing::Decision decision;
+    decision.reason = Tracing::Reason::Sampling;
+    decision.traced = false;
+
+    const std::string operation_name = "do.thing";
+    const SystemTime start = time_.timeSystem().systemTime(); 
+    ON_CALL(stream_info_, startTime()).WillByDefault(testing::Return(start));
+
+    ASSERT_EQ("do.thing", operation_name);
+    ASSERT_EQ(start, time_.timeSystem().systemTime());
+
+    // check the type of the tracer_ pointer
+    const auto as_fluentd_tracer = dynamic_cast<FluentdTracerImpl*>(tracer_.get());
+    
+    auto span = as_fluentd_tracer->startSpan(trace_context, start, operation_name, decision);
+
+    trace_context.remove(FluentdConstants::get().TRACE_PARENT.key());
+    span->injectContext(trace_context, Tracing::UpstreamContext());
+
+    auto sampled_entry = trace_context.get(FluentdConstants::get().TRACE_PARENT.key());
+
+    EXPECT_TRUE(sampled_entry.has_value());
+    EXPECT_EQ(sampled_entry.value(), "00-00000000000000010000000000000002-0000000000000003-01");
+}
+
 
 
 } // namespace Fluentd
