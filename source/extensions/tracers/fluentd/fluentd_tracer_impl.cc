@@ -227,9 +227,9 @@ void Span::finishSpan() {
   std::map<std::string, std::string> record_map;
   record_map["operation"] = operation_;
   record_map["trace_id"] = span_context_.traceId();
-  record_map["span_id"] = span_context_.spanId();
+  record_map["span_id"] = span_context_.parentId();
   record_map["start_time"] = std::to_string(std::chrono::duration_cast<std::chrono::seconds>(
-                                                span_context_.startTime().time_since_epoch())
+                                                start_time_.time_since_epoch())
                                                 .count());
   record_map["end_time"] = std::to_string(time);
 
@@ -248,25 +248,27 @@ void Span::injectContext(Tracing::TraceContext& trace_context,
   
   std::string trace_id_hex = absl::BytesToHexString(span_context_.traceId());
   std::string parent_id_hex = absl::BytesToHexString(span_context_.parentId());
-  std::vector<uint8_t> trace_flags_vec{span_context_.sampled()};
-  strd::string trace_flags_hex = Hex::encode(trace_flags_vec);
+  std::vector<uint8_t> trace_flags_vec{sampled()};
+  std::string trace_flags_hex = Hex::encode(trace_flags_vec);
   std::string traceparent_header_value = absl::StrCat(kDefaultVersion, "-", trace_id_hex, "-", parent_id_hex, "-", trace_flags_hex);
 
   // Set the traceparent in the trace_context.
   traceParentHeader().setRefKey(trace_context, traceparent_header_value);
   // Also set the tracestate.
-  traceStateHeader().setRefKey(trace_context, span_context.tracestate());                               
+  traceStateHeader().setRefKey(trace_context, span_context_.tracestate());                               
 }
 
 Tracing::SpanPtr Span::spawnChild(const Tracing::Config&, const std::string& name,
                                   SystemTime start_time) {
 
                                     // TODO: check if a new span_context_ needs to be built
-  return tracer_->startSpan(trace_context_, start_time, name, tracing_decision_, span_context_);
+
+  SpanContext span_context = SpanContext(kDefaultVersion, span_context_.traceId(), span_context_.parentId(), sampled(), span_context_.tracestate());
+  return tracer_->startSpan(trace_context_, start_time, name, tracing_decision_, span_context);
 }
 
 void Span::setSampled(bool sampled) {
-  span_context_.setSampled(sampled);
+  sampled_ = sampled;
 }
 
 std::string Span::getBaggage(absl::string_view key) {
@@ -280,7 +282,7 @@ void Span::setBaggage(absl::string_view key, absl::string_view value) {
 
 std::string Span::getTraceId() const { return span_context_.traceId(); }
 
-std::string Span::getSpanId() const { return span_context_.spanId(); }
+std::string Span::getSpanId() const { return span_context_.parentId(); }
 
 Tracing::SpanPtr FluentdTracerImpl::startSpan(Tracing::TraceContext& trace_context,
                                               SystemTime start_time,
@@ -295,7 +297,11 @@ Tracing::SpanPtr FluentdTracerImpl::startSpan(Tracing::TraceContext& trace_conte
 
   SpanContext span_context = SpanContext(kDefaultVersion, absl::StrCat(Hex::uint64ToHex(trace_id_high), Hex::uint64ToHex(trace_id)), Hex::uint64ToHex(span_id), tracing_decision.traced, "");
  
-  return std::make_unique<Span>(trace_context, start_time, operation_name, tracing_decision, shared_from_this(), span_context);
+  Span new_span(trace_context, start_time, operation_name, tracing_decision, shared_from_this(), span_context);
+
+  new_span.setSampled(tracing_decision.traced);
+
+  return std::make_unique<Span>(new_span);
 }
 
 Tracing::SpanPtr FluentdTracerImpl::startSpan(Tracing::TraceContext& trace_context,
@@ -305,7 +311,11 @@ Tracing::SpanPtr FluentdTracerImpl::startSpan(Tracing::TraceContext& trace_conte
 
   SpanContext span_context = SpanContext(kDefaultVersion, previous_span_context.traceId(), Hex::uint64ToHex(random_.random()), previous_span_context.sampled(), previous_span_context.tracestate());
 
-  return std::make_unique<Span>(trace_context, start_time, operation_name, tracing_decision, shared_from_this(), span_context);
+  Span new_span(trace_context, start_time, operation_name, tracing_decision, shared_from_this(), span_context);
+
+  new_span.setSampled(previous_span_context.sampled());
+
+  return std::make_unique<Span>(new_span);
 }
 
 void FluentdTracerImpl::onEvent(Network::ConnectionEvent event) {
