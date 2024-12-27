@@ -188,6 +188,46 @@ TEST_F(FluentdTracerIntegrationTest, GenerateSpanContextWithoutHeadersTest) {
     EXPECT_EQ(sampled_entry.value(), "00-00000000000000010000000000000002-0000000000000003-01");
 }
 
+TEST_F(FluentdTracerIntegrationTest, NullSpanWithPropagationHeaderError) {
+    auto* cluster = cluster_manager_.getThreadLocalCluster("fake_cluster");
+
+    auto client = std::make_unique<NiceMock<Envoy::Tcp::AsyncClient::MockAsyncTcpClient>>();
+    auto backoff_strategy = std::make_unique<JitteredExponentialBackOffStrategy>(1000, 10000, random_);
+
+    const auto tracer_ = std::make_shared<FluentdTracerImpl>(
+        *cluster, std::move(client), dispatcher_, config_,
+        std::move(backoff_strategy), scope_, random_);
+
+    EXPECT_NE(nullptr, tracer_);
+    
+    // Add an invalid OTLP header to the request headers.
+    Tracing::TestTraceContextImpl trace_context{
+        {":authority", "test.com"}, {":path", "/"}, {":method", "GET"}};
+    trace_context.set(FluentdConstants::get().TRACE_PARENT.key(), "invalid00-0000000000000003-01");
+
+    Tracing::Decision decision = {Tracing::Reason::Sampling, true};
+
+    const std::string operation_name = "do.thing";
+    const SystemTime start = time_.timeSystem().systemTime(); 
+    ON_CALL(stream_info_, startTime()).WillByDefault(testing::Return(start));
+
+    ASSERT_EQ("do.thing", operation_name);
+    ASSERT_EQ(start, time_.timeSystem().systemTime());
+
+    // check the type of the tracer_ pointer
+    const auto as_fluentd_tracer = dynamic_cast<FluentdTracerImpl*>(tracer_.get());
+    
+    auto span = as_fluentd_tracer->startSpan(trace_context, start, operation_name, decision);
+
+    auto& null_span = *span;
+    EXPECT_EQ(typeid(null_span).name(), typeid(Tracing::NullSpan).name());
+}
+
+} // namespace Fluentd
+} // namespace Tracers
+} // namespace Extensions
+} // namespace Envoy
+
 
 
 } // namespace Fluentd
