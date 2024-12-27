@@ -1,0 +1,114 @@
+#include "envoy/config/trace/v3/fluentd.pb.h"
+
+#include "test/mocks/stream_info/mocks.h"
+#include "test/mocks/thread_local/mocks.h"
+#include "test/mocks/upstream/cluster_manager.h"
+#include "test/test_common/environment.h"
+#include "test/test_common/simulated_time_system.h"
+#include "test/test_common/utility.h"
+
+#include "source/extensions/tracers/fluentd/fluentd_tracer_impl.h"
+
+#include "gtest/gtest.h"
+#include "msgpack.hpp"
+
+using testing::AssertionResult;
+
+namespace Envoy {
+namespace Extensions {
+namespace Tracers {
+namespace Fluentd {
+
+class FluentdTracerIntegrationTest : public testing::Test {
+public:
+    FluentdTracerIntegrationTest() {
+        cluster_manager_.initializeClusters({"fake_cluster"}, {});
+        cluster_manager_.thread_local_cluster_.cluster_.info_->name_ = "fake_cluster";
+        cluster_manager_.initializeThreadLocalClusters({"fake_cluster"});
+    }
+
+protected:
+    NiceMock<Upstream::MockClusterManager> cluster_manager_;
+    Stats::TestUtil::TestStore store_;
+    NiceMock<ThreadLocal::MockInstance> thread_local_slot_allocator_;
+    Event::SimulatedTimeSystem time_;
+    NiceMock<StreamInfo::MockStreamInfo> stream_info_;
+    NiceMock<Random::MockRandomGenerator> random_;
+    NiceMock<Envoy::Tcp::AsyncClient::MockAsyncTcpClient> client_;
+    NiceMock<Envoy::Event::MockDispatcher> dispatcher_;
+    FluentdConfig config_;
+};
+
+TEST_F(FluentdTracerIntegrationTest, Breathing) {
+    auto* cluster = cluster_manager_.getThreadLocalCluster("fake_cluster");
+
+    auto tracer_ = std::make_unique<FluentdTracerImpl>(
+        *cluster, std::make_unique<NiceMock<Envoy::Tcp::AsyncClient::MockAsyncTcpClient>>(), dispatcher_, config_,
+        std::make_unique<JitteredExponentialBackOffStrategy>(1000, 10000, random_), *store_.rootScope(), random_);
+
+    EXPECT_NE(nullptr, tracer_);
+}
+
+TEST_F(FluentdTracerIntegrationTest, ParseSpanContextFromHeadersTest) {
+    auto* cluster = cluster_manager_.getThreadLocalCluster("fake_cluster");
+
+    // Mock the random call for generating span ID so we can check it later.
+    const uint64_t new_span_id = 3;
+    ON_CALL(random_, random()).WillByDefault(testing::Return(new_span_id));
+
+    auto client = std::make_unique<NiceMock<Envoy::Tcp::AsyncClient::MockAsyncTcpClient>>();
+    auto backoff_strategy = std::make_unique<JitteredExponentialBackOffStrategy>(1000, 10000, random_);
+
+    const auto tracer_ = std::make_shared<FluentdTracerImpl>(
+        *cluster, std::move(client), dispatcher_, config_,
+        std::move(backoff_strategy), *store_.rootScope(), random_);
+
+    EXPECT_NE(nullptr, tracer_);
+    
+    Tracing::TestTraceContextImpl trace_context{
+        {":authority", "test.com"}, {":path", "/"}, {":method", "GET"}};
+
+    const std::string version = "00";
+    const uint64_t trace_id_high = 0;
+    const uint64_t trace_id_low = 1;
+    const std::string trace_id_hex =
+        absl::StrCat(Hex::uint64ToHex(trace_id_high), Hex::uint64ToHex(trace_id_low));
+    const uint64_t parent_span_id = 2;
+    const std::string trace_flags = "01";
+    const std::vector<std::string> v = {version, trace_id_hex, Hex::uint64ToHex(parent_span_id),
+                                      trace_flags};
+    const std::string parent_trace_header = absl::StrJoin(v, "-");
+    trace_context.set(FluentdConstants::get().TRACE_PARENT.key(), parent_trace_header);
+    trace_context.set(FluentdConstants::get().TRACE_STATE.key(), "test=foo");
+
+    // make a spancontext
+    SpanContext span_context(version, trace_id_hex, Hex::uint64ToHex(parent_span_id), true, "test=foo");
+
+    Tracing::Decision decision;
+    decision.reason = Tracing::Reason::Sampling;
+    decision.traced = false;
+
+    const std::string operation_name = "do.thing";
+    const SystemTime start = time_.timeSystem().systemTime(); 
+    ON_CALL(stream_info_, startTime()).WillByDefault(testing::Return(start));
+
+    ASSERT_EQ("do.thing", operation_name);
+    ASSERT_EQ(start, time_.timeSystem().systemTime());
+
+    // check the type of the tracer_ pointer
+    const auto as_fluentd_tracer = dynamic_cast<FluentdTracerImpl*>(tracer_.get());
+    
+    auto span = as_fluentd_tracer->startSpan(trace_context, start, operation_name, decision, span_context);
+
+    ASSERT_TRUE(span);
+    EXPECT_EQ(span->getTraceId(), trace_id_hex);
+    EXPECT_EQ(span->getSpanId(), Hex::uint64ToHex(new_span_id));
+}
+
+
+
+} // namespace Fluentd
+} // namespace Tracers
+} // namespace Extensions
+}
+
