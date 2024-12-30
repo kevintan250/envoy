@@ -43,6 +43,7 @@ public:
 
 using EntryPtr = std::unique_ptr<Entry>;
 
+// Span context definitions
 class SpanContext {
   public:
   SpanContext() = default;
@@ -67,6 +68,7 @@ private:
   const std::string tracestate_;
 };
 
+// Trace context definitions
 class FluentdConstantValues {
   public:
   const Tracing::TraceContextHandler TRACE_PARENT{"traceparent"};
@@ -75,6 +77,7 @@ class FluentdConstantValues {
 
 using FluentdConstants = ConstSingleton<FluentdConstantValues>;
 
+// SpanContextExtractor extracts the span context from the trace context
 class SpanContextExtractor {
 public:
   SpanContextExtractor(Tracing::TraceContext& trace_context);
@@ -86,6 +89,7 @@ private:
   const Tracing::TraceContext& trace_context_;
 };
 
+// Template for a Fluentd tracer
 class FluentdTracer {
 public:
   virtual ~FluentdTracer() = default;
@@ -97,6 +101,7 @@ public:
   
 };
 
+// Fluentd tracer stats 
 #define TRACER_FLUENTD_STATS(COUNTER, GAUGE)                                                       \
   COUNTER(entries_lost)                                                                            \
   COUNTER(entries_buffered)                                                                        \
@@ -108,6 +113,7 @@ struct TracerFluentdStats {
   TRACER_FLUENTD_STATS(GENERATE_COUNTER_STRUCT, GENERATE_GAUGE_STRUCT)
 };
 
+// FluentdTracerImpl implements a FluentdTracer, handling tracing and buffer/connection logic
 class FluentdTracerImpl : public Tcp::AsyncTcpClientCallbacks,
                           public FluentdTracer,
                           public std::enable_shared_from_this<FluentdTracerImpl>,
@@ -124,7 +130,6 @@ public:
   void onBelowWriteBufferLowWatermark() override {}
   void onData(Buffer::Instance&, bool) override {}
 
-  // Tracing::Driver
   Tracing::SpanPtr startSpan(Tracing::TraceContext& trace_context,
                              SystemTime start_time,
                              const std::string& operation_name,
@@ -169,6 +174,7 @@ private:
 using FluentdTracerWeakPtr = std::weak_ptr<FluentdTracerImpl>;
 using FluentdTracerSharedPtr = std::shared_ptr<FluentdTracerImpl>;
 
+// FluentdTracerCache is used to cache entries before they are sent to the Fluentd server
 class FluentdTracerCache {
 public:
   virtual ~FluentdTracerCache() = default;
@@ -183,6 +189,7 @@ public:
 
 using FluentdTracerCacheSharedPtr = std::shared_ptr<FluentdTracerCache>;
 
+// Implementation of the FluentdTracerCache as a thread-local cache
 class FluentdTracerCacheImpl : public Singleton::Instance, public FluentdTracerCache {
 public:
   FluentdTracerCacheImpl(Upstream::ClusterManager& cluster_manager, Stats::Scope& parent_scope,
@@ -211,6 +218,7 @@ private:
 
 using TracerPtr = std::unique_ptr<FluentdTracerImpl>;
 
+// Driver manages and creates Fluentd tracers
 class Driver : Logger::Loggable<Logger::Id::tracing>, public Tracing::Driver {
 public:
   Driver(const FluentdConfigSharedPtr fluentd_config,
@@ -240,6 +248,7 @@ private:
   FluentdTracerCacheSharedPtr tracer_cache_;
 };
 
+// Span holds the span context and handles span operations
 class Span : public Tracing::Span {
 public:
   Span(Tracing::TraceContext& trace_context, SystemTime start_time, const std::string& operation_name,

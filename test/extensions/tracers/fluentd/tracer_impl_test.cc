@@ -22,6 +22,8 @@ namespace Extensions {
 namespace Tracers {
 namespace Fluentd {
 
+// Tests adapted from test/extensions/access_loggers/fluentd @ohadvano @wbpcode
+
 class FluentdTracerImplTest : public testing::Test {
 public:
   FluentdTracerImplTest() : 
@@ -83,6 +85,7 @@ public:
   NiceMock<Random::MockRandomGenerator> random_;
 };;
 
+// Fluentd tracer does not write if not connected to upstream.
 TEST_F(FluentdTracerImplTest, NoWriteOnTraceIfNotConnectedToUpstream) {
   init();
   EXPECT_CALL(*async_client_, connect()).WillOnce(Return(true));
@@ -91,6 +94,7 @@ TEST_F(FluentdTracerImplTest, NoWriteOnTraceIfNotConnectedToUpstream) {
   tracer_->trace(std::make_unique<Entry>(time_, std::map<std::string, std::string>{{"event", "test"}}));
 }
 
+// Fluentd tracer does not write if the buffer is not full
 TEST_F(FluentdTracerImplTest, NoWriteOnTraceIfBufferLimitNotPassed) {
   init(100);
   EXPECT_CALL(*async_client_, connect()).Times(0);
@@ -99,6 +103,7 @@ TEST_F(FluentdTracerImplTest, NoWriteOnTraceIfBufferLimitNotPassed) {
   tracer_->trace(std::make_unique<Entry>(time_, std::map<std::string, std::string>{{"event", "test"}}));
 }
 
+// Fluentd tracer does not write if connection is closed remotely
 TEST_F(FluentdTracerImplTest, NoWriteOnTraceIfDisconnectedByRemote) {
   init(1, 1);
   EXPECT_CALL(*flush_timer_, disableTimer());
@@ -112,6 +117,7 @@ TEST_F(FluentdTracerImplTest, NoWriteOnTraceIfDisconnectedByRemote) {
   tracer_->trace(std::make_unique<Entry>(time_, std::map<std::string, std::string>{{"event", "test"}}));
 }
 
+// Fluentd tracer does not write if connection is closed locally
 TEST_F(FluentdTracerImplTest, NoWriteOnTraceIfDisconnectedByLocal) {
   init(1, 1);
   EXPECT_CALL(*flush_timer_, disableTimer());
@@ -125,7 +131,7 @@ TEST_F(FluentdTracerImplTest, NoWriteOnTraceIfDisconnectedByLocal) {
   tracer_->trace(std::make_unique<Entry>(time_, std::map<std::string, std::string>{{"event", "test"}}));
 }
 
-// TODO: test traces more vigorously 
+// Traces a single entry
 TEST_F(FluentdTracerImplTest, TraceSingleEntry) {
   init(); // Default buffer limit is 0 so single entry should be flushed immediately.
   EXPECT_CALL(*backoff_strategy_, reset());
@@ -145,7 +151,7 @@ TEST_F(FluentdTracerImplTest, TraceSingleEntry) {
   tracer_->trace(std::make_unique<Entry>(time_, std::map<std::string, std::string>{{"event", "test"}}));
 }
 
-// TODO: figure out the bytes calculation 
+// Traces two entries and flushes them together
 TEST_F(FluentdTracerImplTest, TraceTwoEntries) {
   init(12); // First entry is 10 bytes, so first entry should not cause the tracer to flush.
 
@@ -171,6 +177,7 @@ TEST_F(FluentdTracerImplTest, TraceTwoEntries) {
   tracer_->trace(std::make_unique<Entry>(time_, std::map<std::string, std::string>{{"event", "test"}}));
 }
 
+// Tests tracer callbacks
 TEST_F(FluentdTracerImplTest, CallbacksTest) {
   init();
   EXPECT_CALL(*async_client_, connect()).WillOnce(Return(true));
@@ -183,6 +190,7 @@ TEST_F(FluentdTracerImplTest, CallbacksTest) {
   EXPECT_NO_THROW(tracer_->onData(buffer, false));
 }
 
+// Fluentd tracer retries connection on failure and holds entry in buffer
 TEST_F(FluentdTracerImplTest, SuccessfulReconnect) {
   init(1, 2);
   EXPECT_CALL(*backoff_strategy_, nextBackOffMs()).WillOnce(Return(1));
@@ -214,6 +222,7 @@ TEST_F(FluentdTracerImplTest, SuccessfulReconnect) {
   retry_timer_->invokeCallback();
 }
 
+// Fluentd tracer fails to reconnect and does note write the entry
 TEST_F(FluentdTracerImplTest, ReconnectFailure) {
   init(1, 2);
 
@@ -239,6 +248,7 @@ TEST_F(FluentdTracerImplTest, ReconnectFailure) {
   retry_timer_->invokeCallback();
 }
 
+// Fluentd tracer reconnects twice 
 TEST_F(FluentdTracerImplTest, TwoReconnects) {
   init(1, 3);
 
@@ -269,6 +279,7 @@ TEST_F(FluentdTracerImplTest, TwoReconnects) {
   retry_timer_->invokeCallback();
 }
 
+// Fluentd tracer retries connection when no healthy upstream is available
 TEST_F(FluentdTracerImplTest, RetryOnNoHealthyUpstream) {
   init();
 
@@ -283,6 +294,7 @@ TEST_F(FluentdTracerImplTest, RetryOnNoHealthyUpstream) {
   tracer_->trace(std::make_unique<Entry>(time_, std::map<std::string, std::string>{{"event", "test"}}));
 }
 
+// Fluentd tracer does not write when the buffer limit is reached
 TEST_F(FluentdTracerImplTest, NoWriteOnBufferFull) {
   // Setting the buffer to 0 so new log will be thrown.
   init(0);
