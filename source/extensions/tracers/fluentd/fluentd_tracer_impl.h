@@ -123,7 +123,7 @@ public:
   FluentdTracerImpl(Upstream::ThreadLocalCluster& cluster, Tcp::AsyncTcpClientPtr client,
                     Event::Dispatcher& dispatcher, const FluentdConfig& config,
                     BackOffStrategyPtr backoff_strategy, Stats::Scope& parent_scope,
-                    Random::RandomGenerator& random);
+                    Random::RandomGenerator& random, TimeSource& time_source);
 
   // Tcp::AsyncTcpClientCallbacks
   void onEvent(Network::ConnectionEvent event) override;
@@ -168,6 +168,7 @@ private:
   const Event::TimerPtr flush_timer_;
   std::map<std::string, std::string> option_;
   Random::RandomGenerator& random_;
+  TimeSource& time_source_;
 };
 
 using FluentdTracerWeakPtr = std::weak_ptr<FluentdTracerImpl>;
@@ -183,7 +184,8 @@ public:
    * @return FluentdTracerSharedPtr ready for logging requests.
    */
   virtual FluentdTracerSharedPtr getOrCreateTracer(const FluentdConfigSharedPtr config,
-                                                   Random::RandomGenerator& random) PURE;
+                                                   Random::RandomGenerator& random,
+                                                   TimeSource& time_source) PURE;
 };
 
 using FluentdTracerCacheSharedPtr = std::shared_ptr<FluentdTracerCache>;
@@ -196,7 +198,8 @@ public:
 
   // FluentdTracerCache
   FluentdTracerSharedPtr getOrCreateTracer(const FluentdConfigSharedPtr config,
-                                           Random::RandomGenerator& random) override;
+                                           Random::RandomGenerator& random,
+                                           TimeSource& time_source) override;
 
 private:
   /**
