@@ -133,7 +133,7 @@ def add_to_launch_json(target, binary, workspace, execroot, arguments, debugger_
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Build and generate launch config for VSCode')
-    parser.add_argument('--debugger', default="lldb", help="debugger type, one of [gdb, lldb]")
+    parser.add_argument('--debugger', default="gdb", help="debugger type, one of [gdb, lldb]")
     parser.add_argument('--args', default='', help="command line arguments if target binary")
     parser.add_argument(
         '--overwrite',

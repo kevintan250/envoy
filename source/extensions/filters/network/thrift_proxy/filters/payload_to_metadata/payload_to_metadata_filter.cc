@@ -1,5 +1,4 @@
 #include "source/extensions/filters/network/thrift_proxy/filters/payload_to_metadata/payload_to_metadata_filter.h"
-#include <iomanip>
 
 #include "source/common/common/regex.h"
 #include "source/common/network/utility.h"
