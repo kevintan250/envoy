@@ -25,7 +25,7 @@ Http::FilterFactoryCb LuaFilterConfig::createFilterFactoryFromProtoTyped(
   };
 }
 
-absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+Router::RouteSpecificFilterConfigConstSharedPtr
 LuaFilterConfig::createRouteSpecificFilterConfigTyped(
     const envoy::extensions::filters::http::lua::v3::LuaPerRoute& proto_config,
     Server::Configuration::ServerFactoryContext& context, ProtobufMessage::ValidationVisitor&) {

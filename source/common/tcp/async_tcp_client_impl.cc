@@ -29,7 +29,7 @@ AsyncTcpClientImpl::~AsyncTcpClientImpl() {
     connection_->removeConnectionCallbacks(*this);
   }
 
-  closeImpl(Network::ConnectionCloseType::NoFlush);
+  close(Network::ConnectionCloseType::NoFlush);
 }
 
 bool AsyncTcpClientImpl::connect() {
@@ -76,7 +76,7 @@ void AsyncTcpClientImpl::onConnectTimeout() {
   close(Network::ConnectionCloseType::NoFlush);
 }
 
-void AsyncTcpClientImpl::closeImpl(Network::ConnectionCloseType type) {
+void AsyncTcpClientImpl::close(Network::ConnectionCloseType type) {
   if (connection_ && !closing_) {
     closing_ = true;
     connection_->close(type);

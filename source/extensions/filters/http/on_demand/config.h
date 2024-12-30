@@ -25,8 +25,7 @@ private:
       const envoy::extensions::filters::http::on_demand::v3::OnDemand& proto_config,
       const std::string&, Server::Configuration::FactoryContext& context) override;
 
-  absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
-  createRouteSpecificFilterConfigTyped(
+  Router::RouteSpecificFilterConfigConstSharedPtr createRouteSpecificFilterConfigTyped(
       const envoy::extensions::filters::http::on_demand::v3::PerRouteConfig& config,
       Server::Configuration::ServerFactoryContext& context,
       ProtobufMessage::ValidationVisitor& visitor) override;

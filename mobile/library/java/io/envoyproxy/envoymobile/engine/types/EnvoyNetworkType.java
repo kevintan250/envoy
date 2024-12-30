@@ -2,9 +2,9 @@ package io.envoyproxy.envoymobile.engine.types;
 
 // Network interface type
 public enum EnvoyNetworkType {
-  GENERIC(1),
-  WLAN(2),
-  WWAN(4),
+  GENERIC(0),
+  WLAN(1),
+  WWAN(2),
   ;
 
   private final int value;

@@ -11,16 +11,14 @@ namespace Extensions {
 namespace HttpFilters {
 namespace RouterFilter {
 
-absl::StatusOr<Http::FilterFactoryCb> RouterFilterConfig::createFilterFactoryFromProtoTyped(
+Http::FilterFactoryCb RouterFilterConfig::createFilterFactoryFromProtoTyped(
     const envoy::extensions::filters::http::router::v3::Router& proto_config,
     const std::string& stat_prefix, Server::Configuration::FactoryContext& context) {
   Stats::StatNameManagedStorage prefix(stat_prefix, context.scope().symbolTable());
-  auto config_or_error = Router::FilterConfig::create(
+  Router::FilterConfigSharedPtr filter_config(new Router::FilterConfig(
       prefix.statName(), context,
       std::make_unique<Router::ShadowWriterImpl>(context.serverFactoryContext().clusterManager()),
-      proto_config);
-  RETURN_IF_NOT_OK_REF(config_or_error.status());
-  Router::FilterConfigSharedPtr filter_config(std::move(*config_or_error));
+      proto_config));
 
   return [filter_config](Http::FilterChainFactoryCallbacks& callbacks) -> void {
     callbacks.addStreamDecoderFilter(

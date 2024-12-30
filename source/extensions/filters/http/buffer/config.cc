@@ -26,7 +26,7 @@ absl::StatusOr<Http::FilterFactoryCb> BufferFilterFactory::createFilterFactoryFr
   };
 }
 
-absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+Router::RouteSpecificFilterConfigConstSharedPtr
 BufferFilterFactory::createRouteSpecificFilterConfigTyped(
     const envoy::extensions::filters::http::buffer::v3::BufferPerRoute& proto_config,
     Server::Configuration::ServerFactoryContext&, ProtobufMessage::ValidationVisitor&) {

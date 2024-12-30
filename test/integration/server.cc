@@ -100,22 +100,14 @@ void IntegrationTestServer::waitUntilListenersReady() {
 void IntegrationTestServer::setDynamicContextParam(absl::string_view resource_type_url,
                                                    absl::string_view key, absl::string_view value) {
   server().dispatcher().post([this, resource_type_url, key, value]() {
-    ASSERT_TRUE(server()
-                    .localInfo()
-                    .contextProvider()
-                    .setDynamicContextParam(resource_type_url, key, value)
-                    .ok());
+    server().localInfo().contextProvider().setDynamicContextParam(resource_type_url, key, value);
   });
 }
 
 void IntegrationTestServer::unsetDynamicContextParam(absl::string_view resource_type_url,
                                                      absl::string_view key) {
   server().dispatcher().post([this, resource_type_url, key]() {
-    ASSERT_TRUE(server()
-                    .localInfo()
-                    .contextProvider()
-                    .unsetDynamicContextParam(resource_type_url, key)
-                    .ok());
+    server().localInfo().contextProvider().unsetDynamicContextParam(resource_type_url, key);
   });
 }
 

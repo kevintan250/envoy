@@ -37,13 +37,12 @@ public:
   /**
    * Create a particular Stats::Sink implementation. If the implementation is unable to produce a
    * Stats::Sink with the provided parameters, it should throw an EnvoyException. The returned
-   * pointer should always be valid when status is OK.
+   * pointer should always be valid.
    * @param config supplies the custom proto configuration for the Stats::Sink
    * @param server supplies the server instance
    */
-  virtual absl::StatusOr<Stats::SinkPtr>
-  createStatsSink(const Protobuf::Message& config,
-                  Server::Configuration::ServerFactoryContext& server) PURE;
+  virtual Stats::SinkPtr createStatsSink(const Protobuf::Message& config,
+                                         Server::Configuration::ServerFactoryContext& server) PURE;
 
   std::string category() const override { return "envoy.stats_sinks"; }
 };
@@ -146,8 +145,8 @@ private:
   /**
    * Initialize stats configuration.
    */
-  absl::Status initializeStatsConfig(const envoy::config::bootstrap::v3::Bootstrap& bootstrap,
-                                     Instance& server);
+  void initializeStatsConfig(const envoy::config::bootstrap::v3::Bootstrap& bootstrap,
+                             Instance& server);
 
   /**
    * Initialize watchdog(s). Call before accessing any watchdog configuration.

@@ -624,11 +624,11 @@ public:
   static const ProtobufWkt::Value& nullValue();
 
   /**
-   * Wrap absl::string_view into ProtobufWkt::Value string value.
+   * Wrap std::string into ProtobufWkt::Value string value.
    * @param str string to be wrapped.
    * @return wrapped string.
    */
-  static ProtobufWkt::Value stringValue(absl::string_view str);
+  static ProtobufWkt::Value stringValue(const std::string& str);
 
   /**
    * Wrap optional std::string into ProtobufWkt::Value string value.

@@ -23,7 +23,7 @@ public:
     return std::make_unique<RouteConfigProto>();
   }
 
-  absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+  Router::RouteSpecificFilterConfigConstSharedPtr
   createRouteSpecificFilterConfig(const Protobuf::Message& proto_config,
                                   Server::Configuration::ServerFactoryContext& context,
                                   ProtobufMessage::ValidationVisitor& validator) override {
@@ -49,7 +49,7 @@ public:
 protected:
   CommonFactoryBase(const std::string& name) : name_(name) {}
 
-  virtual absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+  virtual Router::RouteSpecificFilterConfigConstSharedPtr
   createRouteSpecificFilterConfigTyped(const RouteConfigProto&,
                                        Server::Configuration::ServerFactoryContext&,
                                        ProtobufMessage::ValidationVisitor&) {

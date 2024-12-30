@@ -10,8 +10,9 @@ namespace Fuzz {
 
 static const size_t MaxInputSize = 64 * 1024;
 
-// We have multiple third party JSON parsers in Envoy, nlohmann/JSON and Protobuf.
-// We fuzz nlohmann/JSON and protobuf and compare their results.
+// We have multiple third party JSON parsers in Envoy, nlohmann/JSON, RapidJSON and Protobuf.
+// We fuzz nlohmann/JSON and protobuf and compare their results, since RapidJSON is deprecated and
+// has known limitations. See https://github.com/envoyproxy/envoy/issues/4705.
 DEFINE_FUZZER(const uint8_t* buf, size_t len) {
   // protect against overly large JSON files
   if (len > MaxInputSize) {

@@ -601,10 +601,7 @@ protected:
 
     EXPECT_CALL(membership_updated_, ready());
     EXPECT_CALL(initialized_, ready());
-    cluster_->initialize([&]() {
-      initialized_.ready();
-      return absl::OkStatus();
-    });
+    cluster_->initialize([&]() -> void { initialized_.ready(); });
 
     EXPECT_CALL(*cluster_callback_, onClusterSlotUpdate(_, _));
     expectClusterSlotResponse(singleSlotPrimaryReplica("127.0.0.1", "127.0.0.2", 22120));
@@ -789,10 +786,7 @@ TEST_P(RedisDnsParamTest, ImmediateResolveDns) {
 
   EXPECT_CALL(membership_updated_, ready());
   EXPECT_CALL(initialized_, ready());
-  cluster_->initialize([&]() {
-    initialized_.ready();
-    return absl::OkStatus();
-  });
+  cluster_->initialize([&]() -> void { initialized_.ready(); });
 
   expectHealthyHosts(std::get<3>(GetParam()));
 }
@@ -811,10 +805,7 @@ TEST_F(RedisClusterTest, AddressAsHostname) {
 
   EXPECT_CALL(membership_updated_, ready());
   EXPECT_CALL(initialized_, ready());
-  cluster_->initialize([&]() {
-    initialized_.ready();
-    return absl::OkStatus();
-  });
+  cluster_->initialize([&]() -> void { initialized_.ready(); });
 
   // 1. Single slot with primary and replica
   EXPECT_CALL(*cluster_callback_, onClusterSlotUpdate(_, _));
@@ -864,10 +855,7 @@ TEST_F(RedisClusterTest, AddressAsHostnameParallelResolution) {
   EXPECT_CALL(membership_updated_, ready());
   EXPECT_CALL(initialized_, ready());
   EXPECT_CALL(*cluster_callback_, onClusterSlotUpdate(_, _));
-  cluster_->initialize([&]() {
-    initialized_.ready();
-    return absl::OkStatus();
-  });
+  cluster_->initialize([&]() -> void { initialized_.ready(); });
   expectClusterSlotResponse(twoSlotsPrimariesHostnames("primary1.com", "primary2.com", 22120));
   primary1_resolve_cb(Network::DnsResolver::ResolutionStatus::Completed, "",
                       TestUtility::makeDnsResponse(std::list<std::string>{"127.0.1.1"}));
@@ -900,10 +888,7 @@ TEST_F(RedisClusterTest, AddressAsHostnameFailure) {
 
   EXPECT_CALL(membership_updated_, ready());
   EXPECT_CALL(initialized_, ready());
-  cluster_->initialize([&]() {
-    initialized_.ready();
-    return absl::OkStatus();
-  });
+  cluster_->initialize([&]() -> void { initialized_.ready(); });
 
   EXPECT_CALL(*cluster_callback_, onClusterSlotUpdate(_, _));
   expectClusterSlotResponse(singleSlotPrimaryReplica("primary.com", "replica.org", 22120));
@@ -941,10 +926,7 @@ TEST_F(RedisClusterTest, DontWaitForDNSOnInit) {
 
   // We should see cluster is initialized, even though redis cluster slot request fails.
   EXPECT_CALL(initialized_, ready());
-  cluster_->initialize([&]() {
-    initialized_.ready();
-    return absl::OkStatus();
-  });
+  cluster_->initialize([&]() -> void { initialized_.ready(); });
 
   expectClusterSlotFailure();
   EXPECT_EQ(1U, cluster_->info()->configUpdateStats().update_attempt_.value());
@@ -973,10 +955,7 @@ TEST_F(RedisClusterTest, AddressAsHostnamePartialReplicaFailure) {
 
   EXPECT_CALL(membership_updated_, ready());
   EXPECT_CALL(initialized_, ready());
-  cluster_->initialize([&]() {
-    initialized_.ready();
-    return absl::OkStatus();
-  });
+  cluster_->initialize([&]() -> void { initialized_.ready(); });
 
   EXPECT_CALL(*cluster_callback_, onClusterSlotUpdate(_, _));
   expectClusterSlotResponse(singleSlotPrimaryWithTwoReplicas("primary.com", "failed-replica.org",
@@ -993,10 +972,7 @@ TEST_F(RedisClusterTest, EmptyDnsResponse) {
   expectResolveDiscovery(Network::DnsLookupFamily::V4Only, "foo.bar.com", resolved_addresses);
 
   EXPECT_CALL(initialized_, ready());
-  cluster_->initialize([&]() {
-    initialized_.ready();
-    return absl::OkStatus();
-  });
+  cluster_->initialize([&]() -> void { initialized_.ready(); });
 
   EXPECT_EQ(0UL, cluster_->prioritySet().hostSetsPerPriority()[0]->hosts().size());
   EXPECT_EQ(0UL, cluster_->prioritySet().hostSetsPerPriority()[0]->healthyHosts().size());
@@ -1021,10 +997,7 @@ TEST_F(RedisClusterTest, FailedDnsResponse) {
                          Network::DnsResolver::ResolutionStatus::Failure);
 
   EXPECT_CALL(initialized_, ready());
-  cluster_->initialize([&]() {
-    initialized_.ready();
-    return absl::OkStatus();
-  });
+  cluster_->initialize([&]() -> void { initialized_.ready(); });
 
   EXPECT_EQ(0UL, cluster_->prioritySet().hostSetsPerPriority()[0]->hosts().size());
   EXPECT_EQ(0UL, cluster_->prioritySet().hostSetsPerPriority()[0]->healthyHosts().size());
@@ -1079,10 +1052,7 @@ TEST_F(RedisClusterTest, RedisResolveFailure) {
   expectResolveDiscovery(Network::DnsLookupFamily::V4Only, "foo.bar.com", resolved_addresses);
   expectRedisResolve(true);
 
-  cluster_->initialize([&]() {
-    initialized_.ready();
-    return absl::OkStatus();
-  });
+  cluster_->initialize([&]() -> void { initialized_.ready(); });
 
   // Initialization will wait til the redis cluster succeed.
   expectClusterSlotFailure();
@@ -1143,10 +1113,7 @@ TEST_F(RedisClusterTest, RedisErrorResponse) {
   expectResolveDiscovery(Network::DnsLookupFamily::V4Only, "foo.bar.com", resolved_addresses);
   expectRedisResolve(true);
 
-  cluster_->initialize([&]() {
-    initialized_.ready();
-    return absl::OkStatus();
-  });
+  cluster_->initialize([&]() -> void { initialized_.ready(); });
 
   // Initialization will wait til the redis cluster succeed.
   std::vector<NetworkFilters::Common::Redis::RespValue> hello_world(2);
@@ -1201,10 +1168,7 @@ TEST_F(RedisClusterTest, RedisReplicaErrorResponse) {
   expectResolveDiscovery(Network::DnsLookupFamily::V4Only, "foo.bar.com", resolved_addresses);
   expectRedisResolve(true);
 
-  cluster_->initialize([&]() {
-    initialized_.ready();
-    return absl::OkStatus();
-  });
+  cluster_->initialize([&]() -> void { initialized_.ready(); });
 
   EXPECT_CALL(membership_updated_, ready());
   EXPECT_CALL(initialized_, ready());
@@ -1291,10 +1255,7 @@ TEST_F(RedisClusterTest, MultipleDnsDiscovery) {
         return nullptr;
       }));
 
-  cluster_->initialize([&]() {
-    initialized_.ready();
-    return absl::OkStatus();
-  });
+  cluster_->initialize([&]() -> void { initialized_.ready(); });
 
   // Pending RedisResolve will call cancel in the destructor.
   EXPECT_CALL(pool_request_, cancel());
@@ -1313,10 +1274,7 @@ TEST_F(RedisClusterTest, HostRemovalAfterHcFail) {
 
   EXPECT_CALL(membership_updated_, ready());
   EXPECT_CALL(initialized_, ready());
-  cluster_->initialize([&]() {
-    initialized_.ready();
-    return absl::OkStatus();
-  });
+  cluster_->initialize([&]() -> void { initialized_.ready(); });
 
   EXPECT_CALL(*cluster_callback_, onClusterSlotUpdate(_, _));
   expectClusterSlotResponse(twoSlotsPrimariesWithReplica());

@@ -24,7 +24,7 @@ Http::FilterFactoryCb GrpcJsonTranscoderFilterConfig::createFilterFactoryFromPro
   };
 }
 
-absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+Router::RouteSpecificFilterConfigConstSharedPtr
 GrpcJsonTranscoderFilterConfig::createRouteSpecificFilterConfigTyped(
     const envoy::extensions::filters::http::grpc_json_transcoder::v3::GrpcJsonTranscoder&
         proto_config,

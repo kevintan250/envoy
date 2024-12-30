@@ -404,7 +404,9 @@ public:
 
   JsonFormatterImplBase(const ProtobufWkt::Struct& struct_format, bool omit_empty_values,
                         const CommandParsers& commands = {})
-      : omit_empty_values_(omit_empty_values) {
+      : empty_value_(omit_empty_values ? std::string()
+                                       : std::string(DefaultUnspecifiedValueStringView)) {
+
     for (JsonFormatBuilder::FormatElement& element :
          JsonFormatBuilder().fromStruct(struct_format)) {
       if (element.is_template_) {
@@ -461,8 +463,7 @@ private:
       const absl::optional<std::string> value = formatter->formatWithContext(context, info);
       if (!value.has_value()) {
         // Add the empty value. This needn't be sanitized.
-        serializer.addRawString(omit_empty_values_ ? EMPTY_STRING
-                                                   : DefaultUnspecifiedValueStringView);
+        serializer.addRawString(empty_value_);
         continue;
       }
       // Sanitize the string value and add it to the buffer. The string value will not be quoted
@@ -472,7 +473,8 @@ private:
     serializer.addRawString(Json::Constants::DoubleQuote); // End the JSON string.
   }
 
-  const bool omit_empty_values_;
+  const std::string empty_value_;
+
   using ParsedFormatElement = absl::variant<std::string, Formatters>;
   std::vector<ParsedFormatElement> parsed_elements_;
 };
@@ -497,6 +499,8 @@ public:
   StructFormatterBase(const ProtobufWkt::Struct& format_mapping, bool preserve_types,
                       bool omit_empty_values, const CommandParsers& commands = {})
       : omit_empty_values_(omit_empty_values), preserve_types_(preserve_types),
+        empty_value_(omit_empty_values_ ? std::string()
+                                        : std::string(DefaultUnspecifiedValueStringView)),
         struct_output_format_(FormatBuilder(commands).toFormatMapValue(format_mapping)) {}
 
   ProtobufWkt::Struct formatWithContext(const FormatterContext& context,
@@ -637,25 +641,13 @@ private:
       }
 
       const auto str = provider->formatWithContext(context, stream_info);
-      if (str.has_value()) {
-        return ValueUtil::stringValue(*str);
-      }
-      // Returning an "empty string" (depending on omit_empty_values_) in case
-      // of a formatting error.
-      return ValueUtil::stringValue(omit_empty_values_ ? EMPTY_STRING
-                                                       : DefaultUnspecifiedValueStringView);
+      return ValueUtil::stringValue(str.value_or(empty_value_));
     }
     // Multiple providers forces string output.
     std::string str;
     for (const auto& provider : providers) {
       const auto bit = provider->formatWithContext(context, stream_info);
-      // Add the formatted value if there is one. Otherwise add a default value
-      // of "-" if omit_empty_values_ is not set.
-      if (bit.has_value()) {
-        str += bit.value();
-      } else if (!omit_empty_values_) {
-        str += DefaultUnspecifiedValueStringView;
-      }
+      str += bit.value_or(empty_value_);
     }
     return ValueUtil::stringValue(str);
   }
@@ -692,6 +684,7 @@ private:
 
   const bool omit_empty_values_;
   const bool preserve_types_;
+  const std::string empty_value_;
 
   const StructFormatMapWrapper struct_output_format_;
 };

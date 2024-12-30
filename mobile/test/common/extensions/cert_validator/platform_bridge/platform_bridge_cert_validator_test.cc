@@ -65,8 +65,8 @@ class PlatformBridgeCertValidatorCustomValidate : public PlatformBridgeCertValid
 public:
   PlatformBridgeCertValidatorCustomValidate(
       const Envoy::Ssl::CertificateValidationContextConfig* config, SslStats& stats,
-      Thread::PosixThreadFactoryPtr thread_factory, absl::Status& creation_status)
-      : PlatformBridgeCertValidator(config, stats, std::move(thread_factory), creation_status) {}
+      Thread::PosixThreadFactory& thread_factory)
+      : PlatformBridgeCertValidator(config, stats), thread_factory_(thread_factory) {}
 
   int recordedThreadPriority() const { return recorded_thread_priority_; }
 
@@ -74,13 +74,14 @@ protected:
   void verifyCertChainByPlatform(Event::Dispatcher* dispatcher,
                                  std::vector<std::string> /* cert_chain */, std::string hostname,
                                  std::vector<std::string> /* subject_alt_names */) override {
-    recorded_thread_priority_ = threadFactory()->currentThreadPriority();
+    recorded_thread_priority_ = thread_factory_.currentThreadPriority();
     postVerifyResultAndCleanUp(/* success = */ true, std::move(hostname), "",
                                SSL_AD_CERTIFICATE_UNKNOWN, ValidationFailureType::Success,
                                dispatcher, this);
   }
 
 private:
+  Thread::PosixThreadFactory& thread_factory_;
   int recorded_thread_priority_;
 };
 
@@ -170,7 +171,7 @@ INSTANTIATE_TEST_SUITE_P(TrustMode, PlatformBridgeCertValidatorTest,
                                             CertificateValidationContext::ACCEPT_UNTRUSTED}));
 
 TEST_P(PlatformBridgeCertValidatorTest, NoConfig) {
-  EXPECT_ENVOY_BUG({ PlatformBridgeCertValidator::create(nullptr, stats_).IgnoreError(); },
+  EXPECT_ENVOY_BUG({ PlatformBridgeCertValidator validator(nullptr, stats_); },
                    "Invalid certificate validation context config.");
 }
 
@@ -181,7 +182,7 @@ TEST_P(PlatformBridgeCertValidatorTest, NonEmptyCaCert) {
   EXPECT_CALL(config_, trustChainVerification()).WillRepeatedly(Return(GetParam()));
   EXPECT_CALL(config_, customValidatorConfig()).WillRepeatedly(ReturnRef(platform_bridge_config_));
 
-  EXPECT_ENVOY_BUG({ PlatformBridgeCertValidator::create(&config_, stats_).IgnoreError(); },
+  EXPECT_ENVOY_BUG({ PlatformBridgeCertValidator validator(&config_, stats_); },
                    "Invalid certificate validation context config.");
 }
 
@@ -192,14 +193,13 @@ TEST_P(PlatformBridgeCertValidatorTest, NonEmptyRevocationList) {
   EXPECT_CALL(config_, trustChainVerification()).WillRepeatedly(Return(GetParam()));
   EXPECT_CALL(config_, customValidatorConfig()).WillRepeatedly(ReturnRef(platform_bridge_config_));
 
-  EXPECT_ENVOY_BUG({ PlatformBridgeCertValidator::create(&config_, stats_).IgnoreError(); },
+  EXPECT_ENVOY_BUG({ PlatformBridgeCertValidator validator(&config_, stats_); },
                    "Invalid certificate validation context config.");
 }
 
 TEST_P(PlatformBridgeCertValidatorTest, NoCallback) {
   initializeConfig();
-  std::unique_ptr<PlatformBridgeCertValidator> validator =
-      *PlatformBridgeCertValidator::create(&config_, stats_);
+  PlatformBridgeCertValidator validator(&config_, stats_);
 
   bssl::UniquePtr<STACK_OF(X509)> cert_chain = readCertChainFromFile(
       TestEnvironment::substitute("{{ test_rundir }}/test/common/tls/test_data/san_dns2_cert.pem"));
@@ -207,24 +207,23 @@ TEST_P(PlatformBridgeCertValidatorTest, NoCallback) {
 
   EXPECT_ENVOY_BUG(
       {
-        validator->doVerifyCertChain(*cert_chain, Ssl::ValidateResultCallbackPtr(),
-                                     transport_socket_options_, *ssl_ctx_, validation_context_,
-                                     is_server_, hostname);
+        validator.doVerifyCertChain(*cert_chain, Ssl::ValidateResultCallbackPtr(),
+                                    transport_socket_options_, *ssl_ctx_, validation_context_,
+                                    is_server_, hostname);
       },
       "No callback specified");
 }
 
 TEST_P(PlatformBridgeCertValidatorTest, EmptyCertChain) {
   initializeConfig();
-  std::unique_ptr<PlatformBridgeCertValidator> validator =
-      *PlatformBridgeCertValidator::create(&config_, stats_);
+  PlatformBridgeCertValidator validator(&config_, stats_);
 
   bssl::UniquePtr<STACK_OF(X509)> cert_chain(sk_X509_new_null());
   std::string hostname = "www.example.com";
 
   ValidationResults results =
-      validator->doVerifyCertChain(*cert_chain, std::move(callback_), transport_socket_options_,
-                                   *ssl_ctx_, validation_context_, is_server_, hostname);
+      validator.doVerifyCertChain(*cert_chain, std::move(callback_), transport_socket_options_,
+                                  *ssl_ctx_, validation_context_, is_server_, hostname);
   EXPECT_EQ(ValidationResults::ValidationStatus::Failed, results.status);
   EXPECT_FALSE(results.tls_alert.has_value());
   ASSERT_TRUE(results.error_details.has_value());
@@ -237,8 +236,7 @@ TEST_P(PlatformBridgeCertValidatorTest, ValidCertificate) {
   EXPECT_CALL(helper_handle_->mock_helper(), validateCertificateChain(_, _));
 
   initializeConfig();
-  std::unique_ptr<PlatformBridgeCertValidator> validator =
-      *PlatformBridgeCertValidator::create(&config_, stats_);
+  PlatformBridgeCertValidator validator(&config_, stats_);
 
   std::string hostname = "server1.example.com";
   bssl::UniquePtr<STACK_OF(X509)> cert_chain = readCertChainFromFile(
@@ -250,8 +248,8 @@ TEST_P(PlatformBridgeCertValidatorTest, ValidCertificate) {
   EXPECT_CALL(callback_ref, dispatcher()).WillRepeatedly(ReturnRef(*dispatcher_));
 
   ValidationResults results =
-      validator->doVerifyCertChain(*cert_chain, std::move(callback_), transport_socket_options_,
-                                   *ssl_ctx_, validation_context_, is_server_, hostname);
+      validator.doVerifyCertChain(*cert_chain, std::move(callback_), transport_socket_options_,
+                                  *ssl_ctx_, validation_context_, is_server_, hostname);
   EXPECT_EQ(ValidationResults::ValidationStatus::Pending, results.status);
 
   EXPECT_CALL(callback_ref,
@@ -268,8 +266,7 @@ TEST_P(PlatformBridgeCertValidatorTest, ValidCertificateEmptySanOverrides) {
   EXPECT_CALL(helper_handle_->mock_helper(), validateCertificateChain(_, _));
 
   initializeConfig();
-  std::unique_ptr<PlatformBridgeCertValidator> validator =
-      *PlatformBridgeCertValidator::create(&config_, stats_);
+  PlatformBridgeCertValidator validator(&config_, stats_);
 
   std::string hostname = "server1.example.com";
   bssl::UniquePtr<STACK_OF(X509)> cert_chain = readCertChainFromFile(
@@ -286,8 +283,8 @@ TEST_P(PlatformBridgeCertValidatorTest, ValidCertificateEmptySanOverrides) {
       std::make_shared<Network::TransportSocketOptionsImpl>("", std::move(subject_alt_names));
 
   ValidationResults results =
-      validator->doVerifyCertChain(*cert_chain, std::move(callback_), transport_socket_options_,
-                                   *ssl_ctx_, validation_context_, is_server_, hostname);
+      validator.doVerifyCertChain(*cert_chain, std::move(callback_), transport_socket_options_,
+                                  *ssl_ctx_, validation_context_, is_server_, hostname);
   EXPECT_EQ(ValidationResults::ValidationStatus::Pending, results.status);
 
   EXPECT_CALL(callback_ref,
@@ -304,8 +301,7 @@ TEST_P(PlatformBridgeCertValidatorTest, ValidCertificateEmptyHostNoOverrides) {
   EXPECT_CALL(helper_handle_->mock_helper(), validateCertificateChain(_, _));
 
   initializeConfig();
-  std::unique_ptr<PlatformBridgeCertValidator> validator =
-      *PlatformBridgeCertValidator::create(&config_, stats_);
+  PlatformBridgeCertValidator validator(&config_, stats_);
 
   std::string hostname = "";
   bssl::UniquePtr<STACK_OF(X509)> cert_chain = readCertChainFromFile(
@@ -322,8 +318,8 @@ TEST_P(PlatformBridgeCertValidatorTest, ValidCertificateEmptyHostNoOverrides) {
       std::make_shared<Network::TransportSocketOptionsImpl>("", std::move(subject_alt_names));
 
   ValidationResults results =
-      validator->doVerifyCertChain(*cert_chain, std::move(callback_), transport_socket_options_,
-                                   *ssl_ctx_, validation_context_, is_server_, hostname);
+      validator.doVerifyCertChain(*cert_chain, std::move(callback_), transport_socket_options_,
+                                  *ssl_ctx_, validation_context_, is_server_, hostname);
   EXPECT_EQ(ValidationResults::ValidationStatus::Pending, results.status);
 
   EXPECT_CALL(callback_ref,
@@ -340,8 +336,7 @@ TEST_P(PlatformBridgeCertValidatorTest, ValidCertificateButInvalidSni) {
   EXPECT_CALL(helper_handle_->mock_helper(), validateCertificateChain(_, _));
 
   initializeConfig();
-  std::unique_ptr<PlatformBridgeCertValidator> validator =
-      *PlatformBridgeCertValidator::create(&config_, stats_);
+  PlatformBridgeCertValidator validator(&config_, stats_);
 
   std::string hostname = "server2.example.com";
   bssl::UniquePtr<STACK_OF(X509)> cert_chain = readCertChainFromFile(
@@ -353,8 +348,8 @@ TEST_P(PlatformBridgeCertValidatorTest, ValidCertificateButInvalidSni) {
   EXPECT_CALL(callback_ref, dispatcher()).WillRepeatedly(ReturnRef(*dispatcher_));
 
   ValidationResults results =
-      validator->doVerifyCertChain(*cert_chain, std::move(callback_), transport_socket_options_,
-                                   *ssl_ctx_, validation_context_, is_server_, hostname);
+      validator.doVerifyCertChain(*cert_chain, std::move(callback_), transport_socket_options_,
+                                  *ssl_ctx_, validation_context_, is_server_, hostname);
   EXPECT_EQ(ValidationResults::ValidationStatus::Pending, results.status);
 
   EXPECT_CALL(callback_ref,
@@ -371,8 +366,7 @@ TEST_P(PlatformBridgeCertValidatorTest, ValidCertificateSniOverride) {
   EXPECT_CALL(helper_handle_->mock_helper(), validateCertificateChain(_, _));
 
   initializeConfig();
-  std::unique_ptr<PlatformBridgeCertValidator> validator =
-      *PlatformBridgeCertValidator::create(&config_, stats_);
+  PlatformBridgeCertValidator validator(&config_, stats_);
 
   std::vector<std::string> subject_alt_names = {"server1.example.com"};
 
@@ -389,8 +383,8 @@ TEST_P(PlatformBridgeCertValidatorTest, ValidCertificateSniOverride) {
       std::make_shared<Network::TransportSocketOptionsImpl>("", std::move(subject_alt_names));
 
   ValidationResults results =
-      validator->doVerifyCertChain(*cert_chain, std::move(callback_), transport_socket_options_,
-                                   *ssl_ctx_, validation_context_, is_server_, hostname);
+      validator.doVerifyCertChain(*cert_chain, std::move(callback_), transport_socket_options_,
+                                  *ssl_ctx_, validation_context_, is_server_, hostname);
   EXPECT_EQ(ValidationResults::ValidationStatus::Pending, results.status);
 
   // The cert will be validated against the overridden name not the invalid name "server2".
@@ -405,7 +399,7 @@ TEST_P(PlatformBridgeCertValidatorTest, DeletedWithValidationPending) {
   EXPECT_CALL(helper_handle_->mock_helper(), validateCertificateChain(_, _));
 
   initializeConfig();
-  auto validator = *PlatformBridgeCertValidator::create(&config_, stats_);
+  auto validator = std::make_unique<PlatformBridgeCertValidator>(&config_, stats_);
 
   std::string hostname = "server1.example.com";
   bssl::UniquePtr<STACK_OF(X509)> cert_chain = readCertChainFromFile(
@@ -432,9 +426,7 @@ TEST_P(PlatformBridgeCertValidatorTest, ThreadCreationFailed) {
   initializeConfig();
   auto thread_factory = std::make_unique<Thread::MockPosixThreadFactory>();
   EXPECT_CALL(*thread_factory, createThread(_, _, false)).WillOnce(Return(ByMove(nullptr)));
-  absl::Status creation_status = absl::OkStatus();
-  PlatformBridgeCertValidatorCustomValidate validator(&config_, stats_, std::move(thread_factory),
-                                                      creation_status);
+  PlatformBridgeCertValidator validator(&config_, stats_, std::move(thread_factory));
 
   std::string hostname = "server1.example.com";
   bssl::UniquePtr<STACK_OF(X509)> cert_chain = readCertChainFromFile(
@@ -463,10 +455,7 @@ TEST_P(PlatformBridgeCertValidatorTest, ThreadPriority) {
   EXPECT_CALL(helper_handle_->mock_helper(), cleanupAfterCertificateValidation());
 
   initializeConfig();
-  absl::Status creation_status = absl::OkStatus();
-  PlatformBridgeCertValidatorCustomValidate validator(
-      &config_, stats_, Thread::PosixThreadFactory::create(), creation_status);
-  ASSERT_TRUE(creation_status.ok());
+  PlatformBridgeCertValidatorCustomValidate validator(&config_, stats_, *thread_factory_);
 
   std::string hostname = "server1.example.com";
   bssl::UniquePtr<STACK_OF(X509)> cert_chain = readCertChainFromFile(

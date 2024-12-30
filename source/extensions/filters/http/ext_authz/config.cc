@@ -63,7 +63,7 @@ Http::FilterFactoryCb ExtAuthzFilterConfig::createFilterFactoryFromProtoWithServ
   return callback;
 }
 
-absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+Router::RouteSpecificFilterConfigConstSharedPtr
 ExtAuthzFilterConfig::createRouteSpecificFilterConfigTyped(
     const envoy::extensions::filters::http::ext_authz::v3::ExtAuthzPerRoute& proto_config,
     Server::Configuration::ServerFactoryContext&, ProtobufMessage::ValidationVisitor&) {

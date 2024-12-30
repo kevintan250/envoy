@@ -14,7 +14,7 @@ namespace Extensions {
 namespace StatSinks {
 namespace Hystrix {
 
-absl::StatusOr<Stats::SinkPtr>
+Stats::SinkPtr
 HystrixSinkFactory::createStatsSink(const Protobuf::Message& config,
                                     Server::Configuration::ServerFactoryContext& server) {
   const auto& hystrix_sink =

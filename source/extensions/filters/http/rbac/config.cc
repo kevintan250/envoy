@@ -24,7 +24,7 @@ Http::FilterFactoryCb RoleBasedAccessControlFilterConfigFactory::createFilterFac
   };
 }
 
-absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+Router::RouteSpecificFilterConfigConstSharedPtr
 RoleBasedAccessControlFilterConfigFactory::createRouteSpecificFilterConfigTyped(
     const envoy::extensions::filters::http::rbac::v3::RBACPerRoute& proto_config,
     Server::Configuration::ServerFactoryContext& context,

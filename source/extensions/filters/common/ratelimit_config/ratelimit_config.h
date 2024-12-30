@@ -3,7 +3,6 @@
 #include "envoy/config/route/v3/route_components.pb.h"
 #include "envoy/ratelimit/ratelimit.h"
 
-#include "source/common/formatter/substitution_formatter.h"
 #include "source/common/router/router_ratelimit.h"
 
 #include "absl/container/inlined_vector.h"
@@ -15,7 +14,7 @@ namespace Common {
 namespace RateLimit {
 
 using ProtoRateLimit = envoy::config::route::v3::RateLimit;
-using RateLimitDescriptors = std::vector<Envoy::RateLimit::Descriptor>;
+using RateLimitDescriptors = std::vector<Envoy::RateLimit::LocalDescriptor>;
 
 class RateLimitPolicy : Logger::Loggable<Envoy::Logger::Id::config> {
 public:
@@ -28,12 +27,7 @@ public:
                            const std::string& local_service_cluster,
                            RateLimitDescriptors& descriptors) const;
 
-  bool applyOnStreamDone() const { return apply_on_stream_done_; }
-
 private:
-  const bool apply_on_stream_done_ = false;
-  Formatter::FormatterProviderPtr hits_addend_provider_;
-  absl::optional<uint64_t> hits_addend_;
   std::vector<Envoy::RateLimit::DescriptorProducerPtr> actions_;
 };
 
@@ -50,10 +44,10 @@ public:
   void populateDescriptors(const Http::RequestHeaderMap& headers,
                            const StreamInfo::StreamInfo& info,
                            const std::string& local_service_cluster,
-                           RateLimitDescriptors& descriptors, bool on_stream_done = false) const;
+                           RateLimitDescriptors& descriptors) const;
 
 private:
-  std::vector<RateLimitPolicy> rate_limit_policies_;
+  std::vector<std::unique_ptr<RateLimitPolicy>> rate_limit_policies_;
 };
 
 } // namespace RateLimit

@@ -32,7 +32,6 @@ MockClusterManager::MockClusterManager()
                                ProtobufMessage::ValidationVisitor&) -> OdCdsApiHandlePtr {
         return MockOdCdsApiHandle::create();
       }));
-  ON_CALL(*this, addOrUpdateCluster(_, _, _)).WillByDefault(Return(false));
 }
 
 MockClusterManager::~MockClusterManager() = default;

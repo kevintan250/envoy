@@ -559,11 +559,7 @@ stat_prefix: name
   EXPECT_EQ(manager.initializeReadFilters(), true);
 
   EXPECT_CALL(factory_context.server_factory_context_.cluster_manager_.thread_local_cluster_,
-              chooseHost(_))
-      .WillRepeatedly(Return(factory_context.server_factory_context_.cluster_manager_
-                                 .thread_local_cluster_.lb_.host_));
-  EXPECT_CALL(factory_context.server_factory_context_.cluster_manager_.thread_local_cluster_,
-              tcpConnPool(_, _, _))
+              tcpConnPool(_, _))
       .WillOnce(Return(Upstream::TcpPoolData([]() {}, &conn_pool)));
 
   request_callbacks->complete(Extensions::Filters::Common::RateLimit::LimitStatus::OK, nullptr,

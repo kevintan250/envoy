@@ -65,7 +65,7 @@ protected:
   void onGrpcError(Grpc::Status::GrpcStatus status) override { grpc_status_ = status; }
 
   void onGrpcClose() override { grpc_closed_ = true; }
-  void logStreamInfo() override {}
+  void logGrpcStreamInfo() override {}
   void onComplete(envoy::service::ext_proc::v3::ProcessingResponse&) override {}
   void onError() override {}
 
@@ -93,8 +93,7 @@ TEST_F(ExtProcStreamTest, OpenCloseStream) {
   auto options = Http::AsyncClient::StreamOptions().setParentContext(parent_context);
   auto stream = client_->start(*this, config_with_hash_key_, options, watermark_callbacks_);
   EXPECT_CALL(stream_, closeStream());
-  EXPECT_CALL(stream_, resetStream());
-  stream->close();
+  stream->closeLocalStream();
 }
 
 TEST_F(ExtProcStreamTest, SendToStream) {
@@ -107,8 +106,8 @@ TEST_F(ExtProcStreamTest, SendToStream) {
   ProcessingRequest req;
   stream->send(std::move(req), false);
   EXPECT_CALL(stream_, closeStream());
-  EXPECT_CALL(stream_, resetStream());
-  stream->close();
+
+  stream->closeLocalStream();
 }
 
 TEST_F(ExtProcStreamTest, SendAndClose) {
@@ -150,8 +149,7 @@ TEST_F(ExtProcStreamTest, ReceiveFromStream) {
   stream_callbacks_->onReceiveTrailingMetadata(std::move(empty_response_trailers));
 
   EXPECT_CALL(stream_, closeStream());
-  EXPECT_CALL(stream_, resetStream());
-  stream->close();
+  stream->closeLocalStream();
 }
 
 TEST_F(ExtProcStreamTest, StreamClosed) {
@@ -161,13 +159,15 @@ TEST_F(ExtProcStreamTest, StreamClosed) {
   auto stream = client_->start(*this, config_with_hash_key_, options, watermark_callbacks_);
   ASSERT_NE(stream_callbacks_, nullptr);
   EXPECT_FALSE(last_response_);
+  EXPECT_FALSE(stream->remoteClosed());
   EXPECT_FALSE(grpc_closed_);
   EXPECT_EQ(grpc_status_, 0);
   stream_callbacks_->onRemoteClose(0, "");
   EXPECT_FALSE(last_response_);
   EXPECT_TRUE(grpc_closed_);
+  EXPECT_TRUE(stream->remoteClosed());
   EXPECT_EQ(grpc_status_, 0);
-  stream->close();
+  stream->closeLocalStream();
 }
 
 TEST_F(ExtProcStreamTest, StreamError) {
@@ -183,7 +183,8 @@ TEST_F(ExtProcStreamTest, StreamError) {
   EXPECT_FALSE(last_response_);
   EXPECT_FALSE(grpc_closed_);
   EXPECT_EQ(grpc_status_, 123);
-  stream->close();
+  stream->closeLocalStream();
+  EXPECT_TRUE(stream->localClosed());
 }
 
 TEST_F(ExtProcStreamTest, CancelStream) {
@@ -202,7 +203,7 @@ TEST_F(ExtProcStreamTest, CancelStream) {
 
   // Clean up
   EXPECT_CALL(stream_, closeStream());
-  stream->close();
+  stream->closeLocalStream();
 }
 
 TEST_F(ExtProcStreamTest, StreamInfoAndCleanup) {
@@ -230,7 +231,7 @@ TEST_F(ExtProcStreamTest, StreamInfoAndCleanup) {
   stream->notifyFilterDestroy();
 
   EXPECT_CALL(stream_, closeStream());
-  stream->close();
+  stream->closeLocalStream();
 }
 
 TEST_F(ExtProcStreamTest, WatermarkCallbacksCleanup) {
@@ -256,7 +257,7 @@ TEST_F(ExtProcStreamTest, WatermarkCallbacksCleanup) {
 
   // Clean up
   EXPECT_CALL(stream_, closeStream());
-  stream->close();
+  stream->closeLocalStream();
 }
 
 TEST_F(ExtProcStreamTest, NotifyFilterDestroyAfterRemoteClosed) {
@@ -269,6 +270,8 @@ TEST_F(ExtProcStreamTest, NotifyFilterDestroyAfterRemoteClosed) {
 
   // Close stream remotely first
   stream_callbacks_->onRemoteClose(0, "");
+  EXPECT_TRUE(stream->remoteClosed());
+  EXPECT_TRUE(stream->localClosed());
 
   // No watermark callback removals should happen since stream is already closed
   EXPECT_CALL(stream_, removeWatermarkCallbacks()).Times(0);
@@ -284,8 +287,10 @@ TEST_F(ExtProcStreamTest, ResetStreamWhenNotRemoteClosed) {
 
   auto stream = client_->start(*this, config_with_hash_key_, options, watermark_callbacks_);
 
+  EXPECT_FALSE(stream->remoteClosed());
   EXPECT_CALL(stream_, resetStream());
-  stream->close();
+  stream->resetStream();
+  EXPECT_TRUE(stream->remoteClosed());
 }
 
 TEST_F(ExtProcStreamTest, ResetStreamWhenAlreadyRemoteClosed) {
@@ -298,10 +303,11 @@ TEST_F(ExtProcStreamTest, ResetStreamWhenAlreadyRemoteClosed) {
 
   // Close remotely first
   stream_callbacks_->onRemoteClose(0, "");
+  EXPECT_TRUE(stream->remoteClosed());
 
   // resetStream() should not call stream_.resetStream() since already remotely closed
   EXPECT_CALL(stream_, resetStream()).Times(0);
-  stream->close();
+  stream->resetStream();
 }
 
 TEST_F(ExtProcStreamTest, OnReceiveMessageAfterFilterDestroy) {
@@ -322,7 +328,7 @@ TEST_F(ExtProcStreamTest, OnReceiveMessageAfterFilterDestroy) {
   EXPECT_FALSE(last_response_); // Message should be ignored
 
   EXPECT_CALL(stream_, closeStream());
-  stream->close();
+  stream->closeLocalStream();
 }
 
 } // namespace

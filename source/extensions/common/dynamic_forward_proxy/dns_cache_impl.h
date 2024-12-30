@@ -74,8 +74,7 @@ public:
 
 private:
   DnsCacheImpl(Server::Configuration::GenericFactoryContext& context,
-               const envoy::extensions::common::dynamic_forward_proxy::v3::DnsCacheConfig& config,
-               Network::DnsResolverSharedPtr&& resolver);
+               const envoy::extensions::common::dynamic_forward_proxy::v3::DnsCacheConfig& config);
   struct LoadDnsCacheEntryHandleImpl
       : public LoadDnsCacheEntryHandle,
         RaiiMapOfListElement<std::string, LoadDnsCacheEntryHandleImpl*> {

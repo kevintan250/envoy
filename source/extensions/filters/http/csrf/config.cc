@@ -21,7 +21,7 @@ Http::FilterFactoryCb CsrfFilterFactory::createFilterFactoryFromProtoTyped(
   };
 }
 
-absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+Router::RouteSpecificFilterConfigConstSharedPtr
 CsrfFilterFactory::createRouteSpecificFilterConfigTyped(
     const envoy::extensions::filters::http::csrf::v3::CsrfPolicy& policy,
     Server::Configuration::ServerFactoryContext& context, ProtobufMessage::ValidationVisitor&) {

@@ -31,13 +31,11 @@ def _android_autoconf_impl(repository_ctx):
     ndk_rule = ""
     if ndk_home:
         ndk_rule = """
-    android_ndk_repository(
+    native.android_ndk_repository(
         name="androidndk",
         path="{}",
         api_level={},
     )
-    native.register_toolchains("@androidndk//:all")
-
 """.format(ndk_home, ndk_api_level)
 
     if ndk_rule == "" and sdk_rule == "":
@@ -45,8 +43,6 @@ def _android_autoconf_impl(repository_ctx):
 
     repository_ctx.file("BUILD.bazel", "")
     repository_ctx.file("android_configure.bzl", """
-load("@rules_android_ndk//:rules.bzl", "android_ndk_repository")
-
 def android_workspace():
     {}
     {}

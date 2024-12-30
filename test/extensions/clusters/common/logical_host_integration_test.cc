@@ -1,5 +1,3 @@
-#include "envoy/extensions/clusters/dns/v3/dns_cluster.pb.h"
-
 #include "source/common/config/utility.h"
 
 #include "test/integration/http_integration.h"
@@ -86,13 +84,10 @@ TEST_P(LogicalHostIntegrationTest, LogicalDNSRaceCrashTest) {
   config_helper_.addConfigModifier([&](envoy::config::bootstrap::v3::Bootstrap& bootstrap) -> void {
     RELEASE_ASSERT(bootstrap.mutable_static_resources()->clusters_size() == 1, "");
     auto& cluster = *bootstrap.mutable_static_resources()->mutable_clusters(0);
+    cluster.set_type(envoy::config::cluster::v3::Cluster::LOGICAL_DNS);
     cluster.set_dns_lookup_family(envoy::config::cluster::v3::Cluster::ALL);
-    cluster.mutable_cluster_type()->set_name("envoy.cluster.logical_dns");
-    envoy::extensions::clusters::dns::v3::DnsCluster dns_cluster{};
     // Make the refresh rate fast to hit the R/W race.
-    dns_cluster.mutable_dns_refresh_rate()->set_nanos(1000001);
-    dns_cluster.set_all_addresses_in_single_endpoint(true);
-    cluster.mutable_cluster_type()->mutable_typed_config()->PackFrom(dns_cluster);
+    cluster.mutable_dns_refresh_rate()->set_nanos(1000001);
   });
   config_helper_.addConfigModifier(
       [](envoy::extensions::filters::network::http_connection_manager::v3::HttpConnectionManager&

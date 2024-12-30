@@ -1,6 +1,7 @@
 package io.envoyproxy.envoymobile.engine;
 
 import io.envoyproxy.envoymobile.engine.types.EnvoyHTTPCallbacks;
+import io.envoyproxy.envoymobile.engine.types.EnvoyNetworkType;
 import io.envoyproxy.envoymobile.engine.types.EnvoyStringAccessor;
 import io.envoyproxy.envoymobile.engine.types.EnvoyStatus;
 
@@ -69,7 +70,7 @@ public interface EnvoyEngine {
   /**
    * A callback into the Envoy Engine when the default network type was changed.
    */
-  void onDefaultNetworkChanged(int network);
+  void onDefaultNetworkChanged(EnvoyNetworkType network);
 
   /**
    * A callback into the Envoy Engine when the default network is unavailable.

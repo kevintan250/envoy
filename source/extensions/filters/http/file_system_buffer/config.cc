@@ -34,7 +34,7 @@ Http::FilterFactoryCb FileSystemBufferFilterFactory::createFilterFactoryFromProt
   };
 }
 
-absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+Router::RouteSpecificFilterConfigConstSharedPtr
 FileSystemBufferFilterFactory::createRouteSpecificFilterConfigTyped(
     const ProtoFileSystemBufferFilterConfig& config,
     Server::Configuration::ServerFactoryContext& context, ProtobufMessage::ValidationVisitor&) {

@@ -152,8 +152,7 @@ private:
       Envoy::Http::Matching::HttpFilterActionContext& action_context, FactoryCtx& context,
       FilterCfgFactory& factory);
 
-  absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
-  createRouteSpecificFilterConfigTyped(
+  Router::RouteSpecificFilterConfigConstSharedPtr createRouteSpecificFilterConfigTyped(
       const envoy::extensions::common::matching::v3::ExtensionWithMatcherPerRoute& proto_config,
       Server::Configuration::ServerFactoryContext& context,
       ProtobufMessage::ValidationVisitor& validation) override;

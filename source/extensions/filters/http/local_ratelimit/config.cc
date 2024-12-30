@@ -23,7 +23,7 @@ Http::FilterFactoryCb LocalRateLimitFilterConfig::createFilterFactoryFromProtoTy
   };
 }
 
-absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+Router::RouteSpecificFilterConfigConstSharedPtr
 LocalRateLimitFilterConfig::createRouteSpecificFilterConfigTyped(
     const envoy::extensions::filters::http::local_ratelimit::v3::LocalRateLimit& proto_config,
     Server::Configuration::ServerFactoryContext& context, ProtobufMessage::ValidationVisitor&) {

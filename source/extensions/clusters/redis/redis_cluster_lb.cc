@@ -1,7 +1,5 @@
 #include "source/extensions/clusters/redis/redis_cluster_lb.h"
 
-#include <string>
-
 namespace Envoy {
 namespace Extensions {
 namespace Clusters {
@@ -140,17 +138,8 @@ Upstream::HostConstSharedPtr RedisClusterLoadBalancerFactory::RedisClusterLoadBa
     return nullptr;
   }
 
-  RedisShardSharedPtr shard;
-  if (dynamic_cast<const RedisSpecifyShardContextImpl*>(context)) {
-    if (hash.value() < shard_vector_->size()) {
-      shard = shard_vector_->at(hash.value());
-    } else {
-      return nullptr;
-    }
-  } else {
-    shard = shard_vector_->at(
-        slot_array_->at(hash.value() % Envoy::Extensions::Clusters::Redis::MaxSlot));
-  }
+  auto shard = shard_vector_->at(
+      slot_array_->at(hash.value() % Envoy::Extensions::Clusters::Redis::MaxSlot));
 
   auto redis_context = dynamic_cast<RedisLoadBalancerContext*>(context);
   if (redis_context && redis_context->isReadCommand()) {
@@ -224,12 +213,6 @@ absl::string_view RedisLoadBalancerContextImpl::hashtag(absl::string_view v, boo
 
   return v.substr(start + 1, end - start - 1);
 }
-RedisSpecifyShardContextImpl::RedisSpecifyShardContextImpl(
-    uint64_t shard_index, const NetworkFilters::Common::Redis::RespValue& request,
-    NetworkFilters::Common::Redis::Client::ReadPolicy read_policy)
-    : RedisLoadBalancerContextImpl(std::to_string(shard_index), true, true, request, read_policy),
-      shard_index_(shard_index) {}
-
 } // namespace Redis
 } // namespace Clusters
 } // namespace Extensions

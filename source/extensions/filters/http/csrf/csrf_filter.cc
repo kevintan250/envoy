@@ -24,8 +24,6 @@ struct RcDetailsValues {
 using RcDetails = ConstSingleton<RcDetailsValues>;
 
 namespace {
-constexpr absl::string_view NullOrigin{"null"};
-
 bool isModifyMethod(const Http::RequestHeaderMap& headers) {
   const absl::string_view method_type = headers.getMethodValue();
   if (method_type.empty()) {
@@ -51,11 +49,7 @@ std::string hostAndPort(const absl::string_view absolute_url) {
 //       the Origin header must include the scheme (and hostAndPort expects
 //       an absolute URL).
 std::string sourceOriginValue(const Http::RequestHeaderMap& headers) {
-  const auto origin_value = headers.getInlineValue(origin_handle.handle());
-  if (origin_value == NullOrigin) {
-    return Envoy::EMPTY_STRING;
-  }
-  const auto origin = hostAndPort(origin_value);
+  const auto origin = hostAndPort(headers.getInlineValue(origin_handle.handle()));
   if (!origin.empty()) {
     return origin;
   }

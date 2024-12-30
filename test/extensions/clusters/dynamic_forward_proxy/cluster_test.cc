@@ -91,7 +91,7 @@ public:
     if (!existing_hosts.empty()) {
       EXPECT_CALL(*this, onMemberUpdateCb(SizeIs(existing_hosts.size()), SizeIs(0)));
     }
-    cluster_->initialize([] { return absl::OkStatus(); });
+    cluster_->initialize([] {});
   }
 
   Extensions::Common::DynamicForwardProxy::DnsCacheManagerSharedPtr get() override {

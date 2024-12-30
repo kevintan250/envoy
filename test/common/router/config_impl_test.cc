@@ -10576,7 +10576,7 @@ public:
       return ProtobufTypes::MessagePtr{new ProtobufWkt::Timestamp()};
     }
     std::set<std::string> configTypes() override { return {"google.protobuf.Timestamp"}; }
-    absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+    Router::RouteSpecificFilterConfigConstSharedPtr
     createRouteSpecificFilterConfig(const Protobuf::Message& message,
                                     Server::Configuration::ServerFactoryContext&,
                                     ProtobufMessage::ValidationVisitor&) override {

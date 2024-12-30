@@ -626,9 +626,8 @@ public:
                    absl::optional<uint32_t> overprovisioning_factor = absl::nullopt);
 
 protected:
-  virtual absl::Status runUpdateCallbacks(const HostVector& hosts_added,
-                                          const HostVector& hosts_removed) {
-    return member_update_cb_helper_.runCallbacks(priority_, hosts_added, hosts_removed);
+  virtual void runUpdateCallbacks(const HostVector& hosts_added, const HostVector& hosts_removed) {
+    THROW_IF_NOT_OK(member_update_cb_helper_.runCallbacks(priority_, hosts_added, hosts_removed));
   }
 
 private:
@@ -747,13 +746,12 @@ protected:
                                          overprovisioning_factor);
   }
 
-  virtual absl::Status runUpdateCallbacks(const HostVector& hosts_added,
-                                          const HostVector& hosts_removed) {
-    return member_update_cb_helper_.runCallbacks(hosts_added, hosts_removed);
+  virtual void runUpdateCallbacks(const HostVector& hosts_added, const HostVector& hosts_removed) {
+    THROW_IF_NOT_OK(member_update_cb_helper_.runCallbacks(hosts_added, hosts_removed));
   }
-  virtual absl::Status runReferenceUpdateCallbacks(uint32_t priority, const HostVector& hosts_added,
-                                                   const HostVector& hosts_removed) {
-    return priority_update_cb_helper_.runCallbacks(priority, hosts_added, hosts_removed);
+  virtual void runReferenceUpdateCallbacks(uint32_t priority, const HostVector& hosts_added,
+                                           const HostVector& hosts_removed) {
+    THROW_IF_NOT_OK(priority_update_cb_helper_.runCallbacks(priority, hosts_added, hosts_removed));
   }
   // This vector will generally have at least one member, for priority level 0.
   // It will expand as host sets are added but currently does not shrink to
@@ -1022,12 +1020,11 @@ public:
   upstreamHttpProtocol(absl::optional<Http::Protocol> downstream_protocol) const override;
 
   // Http::FilterChainFactory
-  bool createFilterChain(Http::FilterChainManager& manager,
+  bool createFilterChain(Http::FilterChainManager& manager, bool only_create_if_configured,
                          const Http::FilterChainOptions&) const override {
-    if (http_filter_factories_.empty()) {
+    if (!has_configured_http_filters_ && only_create_if_configured) {
       return false;
     }
-
     Http::FilterChainUtility::createFilterChainForFactories(
         manager, Http::EmptyFilterChainOptions{}, http_filter_factories_);
     return true;
@@ -1167,6 +1164,8 @@ private:
   const bool warm_hosts_ : 1;
   const bool set_local_interface_name_on_upstream_connections_ : 1;
   const bool added_via_api_ : 1;
+  // true iff the cluster proto specified upstream http filters.
+  bool has_configured_http_filters_ : 1;
   const bool per_endpoint_stats_ : 1;
 };
 
@@ -1231,7 +1230,7 @@ public:
   ClusterInfoConstSharedPtr info() const override { return info_; }
   Outlier::Detector* outlierDetector() override { return outlier_detector_.get(); }
   const Outlier::Detector* outlierDetector() const override { return outlier_detector_.get(); }
-  void initialize(std::function<absl::Status()> callback) override;
+  void initialize(std::function<void()> callback) override;
   UnitFloat dropOverload() const override { return drop_overload_; }
   const std::string& dropCategory() const override { return drop_category_; }
   void setDropOverload(UnitFloat drop_overload) override { drop_overload_ = drop_overload; }
@@ -1300,7 +1299,7 @@ private:
   void reloadHealthyHosts(const HostSharedPtr& host);
 
   bool initialization_started_{};
-  std::function<absl::Status()> initialization_complete_callback_;
+  std::function<void()> initialization_complete_callback_;
   uint64_t pending_initialize_health_checks_{};
   const bool local_cluster_;
   Config::ConstMetadataSharedPoolSharedPtr const_metadata_shared_pool_;

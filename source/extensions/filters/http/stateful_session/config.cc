@@ -21,7 +21,7 @@ Http::FilterFactoryCb StatefulSessionFactoryConfig::createFilterFactoryFromProto
   };
 }
 
-absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+Router::RouteSpecificFilterConfigConstSharedPtr
 StatefulSessionFactoryConfig::createRouteSpecificFilterConfigTyped(
     const PerRouteProtoConfig& proto_config, Server::Configuration::ServerFactoryContext& context,
     ProtobufMessage::ValidationVisitor& visitor) {

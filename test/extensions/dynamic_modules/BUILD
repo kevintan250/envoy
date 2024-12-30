@@ -91,10 +91,7 @@ rust_doc_test(
 rustfmt_test(
     name = "rust_sdk_fmt",
     tags = ["nocoverage"],
-    targets = [
-        "//source/extensions/dynamic_modules/sdk/rust:envoy_proxy_dynamic_modules_rust_sdk",
-        "//source/extensions/dynamic_modules/sdk/rust:build_script_",
-    ],
+    targets = ["//source/extensions/dynamic_modules/sdk/rust:envoy_proxy_dynamic_modules_rust_sdk"],
 )
 
 rust_clippy(

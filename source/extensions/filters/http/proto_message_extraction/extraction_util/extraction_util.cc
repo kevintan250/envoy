@@ -55,10 +55,14 @@ using ::Envoy::Protobuf::io::CodedInputStream;
 using ::Envoy::Protobuf::io::CodedOutputStream;
 using ::Envoy::Protobuf::io::CordOutputStream;
 using ::Envoy::Protobuf::util::JsonParseOptions;
+using ::Envoy::Protobuf::util::TypeResolver;
+using ::Envoy::Protobuf::util::converter::GetFullTypeWithUrl;
 using ::Envoy::Protobuf::util::converter::JsonObjectWriter;
 using ::Envoy::Protobuf::util::converter::ProtoStreamObjectSource;
 using ::Envoy::ProtobufWkt::Struct;
 using ::Envoy::ProtobufWkt::Value;
+using ::google::grpc::transcoding::TypeHelper;
+using ::proto_processing_lib::proto_scrubber::ProtoScrubber;
 
 std::string kLocationRegionExtractorPattern = R"((?:^|/)(?:locations|regions)/([^/]+))";
 
@@ -124,7 +128,7 @@ void GetMonitoredResourceLabels(absl::string_view label_extractor,
   }
 }
 
-WireFormatLite::WireType getWireType(const Field& field_desc) {
+WireFormatLite::WireType GetWireType(const Field& field_desc) {
   static WireFormatLite::WireType field_kind_to_wire_type[] = {
       static_cast<WireFormatLite::WireType>(-1), // TYPE_UNKNOWN
       WireFormatLite::WIRETYPE_FIXED64,          // TYPE_DOUBLE
@@ -166,7 +170,7 @@ ExtractRepeatedFieldSizeHelper(const FieldExtractor& field_extractor, const std:
     // repeated field or map field.
     uint32_t count = 0, tag = 0;
     if (field->packed()) {
-      const WireFormatLite::WireType field_wire_type = getWireType(*field);
+      const WireFormatLite::WireType field_wire_type = GetWireType(*field);
 
       while ((tag = input_stream->ReadTag()) != 0) {
         if (field->number() != WireFormatLite::GetTagFieldNumber(tag)) {
@@ -318,9 +322,8 @@ absl::StatusOr<std::string> SingularFieldUseLastValue(const std::string first_va
                                                       const Field* field,
                                                       CodedInputStream* input_stream) {
   ASSIGN_OR_RETURN(std::string last_value, FindSingularLastValue(field, input_stream));
-  if (last_value.empty()) {
+  if (last_value.empty())
     return first_value;
-  }
   return last_value;
 }
 

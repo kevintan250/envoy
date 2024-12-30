@@ -50,7 +50,7 @@ private:
 
 class TimedCertValidatorFactory : public CertValidatorFactory {
 public:
-  absl::StatusOr<CertValidatorPtr>
+  CertValidatorPtr
   createCertValidator(const Envoy::Ssl::CertificateValidationContextConfig* config, SslStats& stats,
                       Server::Configuration::CommonFactoryContext& context) override {
     auto validator = std::make_unique<TimedCertValidator>(validation_time_out_ms_, config, stats,

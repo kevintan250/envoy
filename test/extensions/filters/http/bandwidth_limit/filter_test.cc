@@ -25,10 +25,8 @@ public:
   void setup(const std::string& yaml) {
     envoy::extensions::filters::http::bandwidth_limit::v3::BandwidthLimit config;
     TestUtility::loadFromYaml(yaml, config);
-    auto config_or_status =
-        FilterConfig::create(config, *stats_.rootScope(), runtime_, time_system_, true);
-    EXPECT_TRUE(config_or_status.ok());
-    config_ = *config_or_status;
+    config_ =
+        std::make_shared<FilterConfig>(config, *stats_.rootScope(), runtime_, time_system_, true);
     filter_ = std::make_shared<BandwidthLimiter>(config_);
     filter_->setDecoderFilterCallbacks(decoder_filter_callbacks_);
     filter_->setEncoderFilterCallbacks(encoder_filter_callbacks_);

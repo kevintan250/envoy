@@ -23,7 +23,13 @@ public:
   virtual void send(envoy::service::ext_proc::v3::ProcessingRequest&& request,
                     bool end_stream) PURE;
   // Idempotent close. Return true if it actually closed.
-  virtual bool close() PURE;
+  // Sends a half-close from the client side.
+  // No further messages can be sent after this, but gRPC server may still send
+  // messages back.
+  virtual bool closeLocalStream() PURE;
+  virtual bool remoteClosed() const PURE;
+  virtual bool localClosed() const PURE;
+  virtual void resetStream() PURE;
   virtual const StreamInfo::StreamInfo& streamInfo() const PURE;
   virtual StreamInfo::StreamInfo& streamInfo() PURE;
   virtual void notifyFilterDestroy() PURE;
@@ -38,7 +44,7 @@ public:
       std::unique_ptr<envoy::service::ext_proc::v3::ProcessingResponse>&& response) PURE;
   virtual void onGrpcError(Grpc::Status::GrpcStatus error) PURE;
   virtual void onGrpcClose() PURE;
-  virtual void logStreamInfo() PURE;
+  virtual void logGrpcStreamInfo() PURE;
 };
 
 class ExternalProcessorClient : public ClientBase {

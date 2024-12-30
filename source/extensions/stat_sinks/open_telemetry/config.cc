@@ -10,7 +10,7 @@ namespace Extensions {
 namespace StatSinks {
 namespace OpenTelemetry {
 
-absl::StatusOr<Stats::SinkPtr>
+Stats::SinkPtr
 OpenTelemetrySinkFactory::createStatsSink(const Protobuf::Message& config,
                                           Server::Configuration::ServerFactoryContext& server) {
   validateProtoDescriptors();
@@ -29,7 +29,7 @@ OpenTelemetrySinkFactory::createStatsSink(const Protobuf::Message& config,
     auto client_or_error =
         server.clusterManager().grpcAsyncClientManager().getOrCreateRawAsyncClient(
             grpc_service, server.scope(), false);
-    RETURN_IF_NOT_OK_REF(client_or_error.status());
+    THROW_IF_NOT_OK_REF(client_or_error.status());
     std::shared_ptr<OpenTelemetryGrpcMetricsExporter> grpc_metrics_exporter =
         std::make_shared<OpenTelemetryGrpcMetricsExporterImpl>(otlp_options,
                                                                client_or_error.value());
@@ -41,7 +41,7 @@ OpenTelemetrySinkFactory::createStatsSink(const Protobuf::Message& config,
     break;
   }
 
-  return absl::InvalidArgumentError("unexpected Open Telemetry protocol case num");
+  throw EnvoyException("unexpected Open Telemetry protocol case num");
 }
 
 ProtobufTypes::MessagePtr OpenTelemetrySinkFactory::createEmptyConfigProto() {

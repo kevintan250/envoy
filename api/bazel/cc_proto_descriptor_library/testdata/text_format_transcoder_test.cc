@@ -33,8 +33,8 @@ public:
                                 bool ignore_warnings = false);
 
   // google::protobuf::io::ErrorCollector:
-  void RecordError(int line, int column, absl::string_view message) override;
-  void RecordWarning(int line, int column, absl::string_view message) override;
+  void AddError(int line, ColumnNumber column, const std::string& message) override;
+  void AddWarning(int line, ColumnNumber column, const std::string& message) override;
 
 private:
   std::string& error_text_;
@@ -47,16 +47,16 @@ StringErrorCollector::StringErrorCollector(std::string& error_text, bool one_ind
     : error_text_(error_text), index_offset_(one_indexing ? 1 : 0),
       ignore_warnings_(ignore_warnings) {}
 
-void StringErrorCollector::RecordError(int line, ColumnNumber column, absl::string_view message) {
+void StringErrorCollector::AddError(int line, ColumnNumber column, const std::string& message) {
   absl::SubstituteAndAppend(&error_text_, "$0($1): $2\n", line + index_offset_,
                             column + index_offset_, message);
 }
 
-void StringErrorCollector::RecordWarning(int line, ColumnNumber column, absl::string_view message) {
+void StringErrorCollector::AddWarning(int line, ColumnNumber column, const std::string& message) {
   if (ignore_warnings_) {
     return;
   }
-  RecordError(line, column, message);
+  AddError(line, column, message);
 }
 
 using ::testing::Eq;

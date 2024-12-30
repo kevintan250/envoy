@@ -391,7 +391,7 @@ Ssl::ParsedX509NameOptConstRef ConnectionInfoImplBase::parsedSubjectPeerCertific
       });
 
   if (parsedName) {
-    return {*parsedName};
+    return Ssl::ParsedX509NameOptConstRef(*parsedName);
   }
   return absl::nullopt;
 }

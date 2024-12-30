@@ -365,9 +365,8 @@ private:
 class CustomStatsSinkFactory : public Server::Configuration::StatsSinkFactory {
 public:
   // StatsSinkFactory
-  absl::StatusOr<Stats::SinkPtr>
-  createStatsSink(const Protobuf::Message&,
-                  Server::Configuration::ServerFactoryContext& server) override {
+  Stats::SinkPtr createStatsSink(const Protobuf::Message&,
+                                 Server::Configuration::ServerFactoryContext& server) override {
     return std::make_unique<CustomStatsSink>(server.scope());
   }
 
@@ -1643,9 +1642,8 @@ private:
 class CallbacksStatsSinkFactory : public Server::Configuration::StatsSinkFactory {
 public:
   // StatsSinkFactory
-  absl::StatusOr<Stats::SinkPtr>
-  createStatsSink(const Protobuf::Message&,
-                  Server::Configuration::ServerFactoryContext& server) override {
+  Stats::SinkPtr createStatsSink(const Protobuf::Message&,
+                                 Server::Configuration::ServerFactoryContext& server) override {
     return std::make_unique<CallbacksStatsSink>(server);
   }
 

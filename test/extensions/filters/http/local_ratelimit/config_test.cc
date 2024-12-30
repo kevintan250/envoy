@@ -61,11 +61,8 @@ response_headers_to_add:
   NiceMock<Server::Configuration::MockServerFactoryContext> context;
 
   EXPECT_CALL(context.dispatcher_, createTimer_(_));
-  const auto route_config =
-      factory
-          .createRouteSpecificFilterConfig(*proto_config, context,
-                                           ProtobufMessage::getNullValidationVisitor())
-          .value();
+  const auto route_config = factory.createRouteSpecificFilterConfig(
+      *proto_config, context, ProtobufMessage::getNullValidationVisitor());
   const auto* config = dynamic_cast<const FilterConfig*>(route_config.get());
   EXPECT_TRUE(config->requestAllowed({}).allowed);
 }
@@ -86,11 +83,8 @@ token_bucket:
   NiceMock<Server::Configuration::MockServerFactoryContext> context;
 
   EXPECT_CALL(context.dispatcher_, createTimer_(_));
-  const auto route_config =
-      factory
-          .createRouteSpecificFilterConfig(*proto_config, context,
-                                           ProtobufMessage::getNullValidationVisitor())
-          .value();
+  const auto route_config = factory.createRouteSpecificFilterConfig(
+      *proto_config, context, ProtobufMessage::getNullValidationVisitor());
   const auto* config = dynamic_cast<const FilterConfig*>(route_config.get());
   EXPECT_FALSE(config->enabled());
   EXPECT_FALSE(config->enforced());
@@ -106,10 +100,8 @@ stat_prefix: test
   TestUtility::loadFromYaml(config_yaml, *proto_config);
 
   NiceMock<Server::Configuration::MockServerFactoryContext> context;
-  EXPECT_THROW(factory
-                   .createRouteSpecificFilterConfig(*proto_config, context,
-                                                    ProtobufMessage::getNullValidationVisitor())
-                   .value(),
+  EXPECT_THROW(factory.createRouteSpecificFilterConfig(*proto_config, context,
+                                                       ProtobufMessage::getNullValidationVisitor()),
                EnvoyException);
 }
 
@@ -129,10 +121,8 @@ token_bucket:
   NiceMock<Server::Configuration::MockServerFactoryContext> context;
 
   EXPECT_CALL(context.dispatcher_, createTimer_(_));
-  EXPECT_THROW(factory
-                   .createRouteSpecificFilterConfig(*proto_config, context,
-                                                    ProtobufMessage::getNullValidationVisitor())
-                   .value(),
+  EXPECT_THROW(factory.createRouteSpecificFilterConfig(*proto_config, context,
+                                                       ProtobufMessage::getNullValidationVisitor()),
                EnvoyException);
 }
 
@@ -176,10 +166,8 @@ descriptors:
   NiceMock<Server::Configuration::MockServerFactoryContext> context;
 
   EXPECT_CALL(context.dispatcher_, createTimer_(_)).Times(0);
-  EXPECT_THROW(factory
-                   .createRouteSpecificFilterConfig(*proto_config, context,
-                                                    ProtobufMessage::getNullValidationVisitor())
-                   .value(),
+  EXPECT_THROW(factory.createRouteSpecificFilterConfig(*proto_config, context,
+                                                       ProtobufMessage::getNullValidationVisitor()),
                EnvoyException);
 }
 
@@ -231,11 +219,8 @@ descriptors:
   NiceMock<Server::Configuration::MockServerFactoryContext> context;
 
   EXPECT_CALL(context.dispatcher_, createTimer_(_));
-  const auto route_config =
-      factory
-          .createRouteSpecificFilterConfig(*proto_config, context,
-                                           ProtobufMessage::getNullValidationVisitor())
-          .value();
+  const auto route_config = factory.createRouteSpecificFilterConfig(
+      *proto_config, context, ProtobufMessage::getNullValidationVisitor());
   const auto* config = dynamic_cast<const FilterConfig*>(route_config.get());
   EXPECT_TRUE(config->requestAllowed({}).allowed);
 }
@@ -288,10 +273,8 @@ descriptors:
   NiceMock<Server::Configuration::MockServerFactoryContext> context;
 
   EXPECT_CALL(context.dispatcher_, createTimer_(_));
-  EXPECT_THROW(factory
-                   .createRouteSpecificFilterConfig(*proto_config, context,
-                                                    ProtobufMessage::getNullValidationVisitor())
-                   .value(),
+  EXPECT_THROW(factory.createRouteSpecificFilterConfig(*proto_config, context,
+                                                       ProtobufMessage::getNullValidationVisitor()),
                EnvoyException);
 }
 
@@ -324,10 +307,8 @@ response_headers_to_add:
 
   NiceMock<Server::Configuration::MockServerFactoryContext> context;
 
-  EXPECT_THROW(factory
-                   .createRouteSpecificFilterConfig(*proto_config, context,
-                                                    ProtobufMessage::getNullValidationVisitor())
-                   .value(),
+  EXPECT_THROW(factory.createRouteSpecificFilterConfig(*proto_config, context,
+                                                       ProtobufMessage::getNullValidationVisitor()),
                EnvoyException);
 }
 
@@ -359,10 +340,8 @@ local_rate_limit_per_downstream_connection: true
   NiceMock<Server::Configuration::MockServerFactoryContext> context;
 
   EXPECT_THROW_WITH_MESSAGE(
-      factory
-          .createRouteSpecificFilterConfig(*proto_config, context,
-                                           ProtobufMessage::getNullValidationVisitor())
-          .value(),
+      factory.createRouteSpecificFilterConfig(*proto_config, context,
+                                              ProtobufMessage::getNullValidationVisitor()),
       EnvoyException,
       "local_cluster_rate_limit is set and local_rate_limit_per_downstream_connection is set to "
       "true");
@@ -395,10 +374,8 @@ local_cluster_rate_limit: {}
   NiceMock<Server::Configuration::MockServerFactoryContext> context;
 
   EXPECT_THROW_WITH_MESSAGE(
-      factory
-          .createRouteSpecificFilterConfig(*proto_config, context,
-                                           ProtobufMessage::getNullValidationVisitor())
-          .value(),
+      factory.createRouteSpecificFilterConfig(*proto_config, context,
+                                              ProtobufMessage::getNullValidationVisitor()),
       EnvoyException, "local_cluster_rate_limit is set but no local cluster name is present");
 }
 
@@ -430,10 +407,8 @@ local_cluster_rate_limit: {}
   context.cluster_manager_.local_cluster_name_ = "local_cluster";
 
   EXPECT_THROW_WITH_MESSAGE(
-      factory
-          .createRouteSpecificFilterConfig(*proto_config, context,
-                                           ProtobufMessage::getNullValidationVisitor())
-          .value(),
+      factory.createRouteSpecificFilterConfig(*proto_config, context,
+                                              ProtobufMessage::getNullValidationVisitor()),
       EnvoyException, "local_cluster_rate_limit is set but no local cluster is present");
 }
 
@@ -470,10 +445,8 @@ local_cluster_rate_limit: {}
   EXPECT_CALL(*local_cluster, prioritySet()).WillOnce(ReturnRef(priority_set));
 
   EXPECT_CALL(context.dispatcher_, createTimer_(_));
-  EXPECT_TRUE(factory
-                  .createRouteSpecificFilterConfig(*proto_config, context,
-                                                   ProtobufMessage::getNullValidationVisitor())
-                  .ok());
+  EXPECT_NO_THROW(factory.createRouteSpecificFilterConfig(
+      *proto_config, context, ProtobufMessage::getNullValidationVisitor()));
 }
 
 } // namespace LocalRateLimitFilter

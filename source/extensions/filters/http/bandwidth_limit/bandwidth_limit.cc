@@ -27,19 +27,8 @@ const Http::LowerCaseString DefaultResponseFilterDelayTrailer =
     Http::LowerCaseString("bandwidth-response-filter-delay-ms");
 } // namespace
 
-absl::StatusOr<std::shared_ptr<FilterConfig>> FilterConfig::create(
-    const envoy::extensions::filters::http::bandwidth_limit::v3::BandwidthLimit& config,
-    Stats::Scope& scope, Runtime::Loader& runtime, TimeSource& time_source, bool per_route) {
-  auto status = absl::OkStatus();
-  auto filter_config = std::shared_ptr<FilterConfig>(
-      new FilterConfig(config, scope, runtime, time_source, per_route, status));
-  RETURN_IF_NOT_OK_REF(status);
-  return filter_config;
-}
-
 FilterConfig::FilterConfig(const BandwidthLimit& config, Stats::Scope& scope,
-                           Runtime::Loader& runtime, TimeSource& time_source, bool per_route,
-                           absl::Status& creation_status)
+                           Runtime::Loader& runtime, TimeSource& time_source, bool per_route)
     : runtime_(runtime), time_source_(time_source), enable_mode_(config.enable_mode()),
       limit_kbps_(PROTOBUF_GET_WRAPPED_OR_DEFAULT(config, limit_kbps, 0)),
       fill_interval_(std::chrono::milliseconds(PROTOBUF_GET_MS_OR_DEFAULT(
@@ -67,11 +56,8 @@ FilterConfig::FilterConfig(const BandwidthLimit& config, Stats::Scope& scope,
               : Http::LowerCaseString(absl::StrCat(config.response_trailer_prefix(), "-",
                                                    DefaultResponseFilterDelayTrailer.get()))),
       enable_response_trailers_(config.enable_response_trailers()) {
-  creation_status = absl::OkStatus();
-
   if (per_route && !config.has_limit_kbps()) {
-    creation_status = absl::InvalidArgumentError("limit must be set for per route filter config");
-    return;
+    throw EnvoyException("bandwidthlimitfilter: limit must be set for per route filter config");
   }
 
   // The token bucket is configured with a max token count of the number of

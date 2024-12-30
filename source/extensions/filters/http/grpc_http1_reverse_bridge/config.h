@@ -24,8 +24,7 @@ public:
       Envoy::Server::Configuration::FactoryContext& context) override;
 
 private:
-  absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
-  createRouteSpecificFilterConfigTyped(
+  Router::RouteSpecificFilterConfigConstSharedPtr createRouteSpecificFilterConfigTyped(
       const envoy::extensions::filters::http::grpc_http1_reverse_bridge::v3::FilterConfigPerRoute&
           proto_config,
       Server::Configuration::ServerFactoryContext& context,

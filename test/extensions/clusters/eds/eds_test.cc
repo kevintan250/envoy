@@ -141,10 +141,7 @@ public:
   void initialize() {
     EXPECT_CALL(server_context_, timeSource()).WillRepeatedly(testing::ReturnRef(simTime()));
     EXPECT_CALL(*server_context_.cluster_manager_.subscription_factory_.subscription_, start(_));
-    cluster_->initialize([this] {
-      initialized_ = true;
-      return absl::OkStatus();
-    });
+    cluster_->initialize([this] { initialized_ = true; });
   }
 
   void doOnConfigUpdateVerifyNoThrow(
@@ -437,36 +434,6 @@ TEST_F(EdsTest, DualStackEndpoint) {
       hosts[0]->createConnection(dispatcher, options, transport_socket_options);
   // The created connection will be wrapped in a HappyEyeballsConnectionImpl.
   EXPECT_NE(connection, connection_data.connection_.get());
-}
-
-// Verify that non-IP additional addresses are rejected.
-TEST_F(EdsTest, RejectNonIpAdditionalAddresses) {
-  envoy::config::endpoint::v3::ClusterLoadAssignment cluster_load_assignment;
-  cluster_load_assignment.set_cluster_name("fare");
-
-  // Add dual stack endpoint
-  auto* endpoints = cluster_load_assignment.add_endpoints();
-  auto* endpoint = endpoints->add_lb_endpoints();
-  endpoint->mutable_endpoint()->mutable_address()->mutable_socket_address()->set_address("::1");
-  endpoint->mutable_endpoint()->mutable_address()->mutable_socket_address()->set_port_value(80);
-  endpoint->mutable_endpoint()
-      ->mutable_additional_addresses()
-      ->Add()
-      ->mutable_address()
-      ->mutable_envoy_internal_address()
-      ->set_server_listener_name("internal_address");
-
-  endpoint->mutable_load_balancing_weight()->set_value(30);
-
-  initialize();
-  const auto decoded_resources =
-      TestUtility::decodeResources({cluster_load_assignment}, "cluster_name");
-  try {
-    (void)eds_callbacks_->onConfigUpdate(decoded_resources.refvec_, "");
-    FAIL() << "Invalid address was not rejected";
-  } catch (const EnvoyException& e) {
-    EXPECT_STREQ("additional_addresses must be IP addresses.", e.what());
-  }
 }
 
 // Validate that onConfigUpdate() updates the endpoint metadata.
@@ -2971,10 +2938,7 @@ public:
 
   void initialize() {
     EXPECT_CALL(*server_context_.cluster_manager_.subscription_factory_.subscription_, start(_));
-    cluster_pre_->initialize([this] {
-      initialized_ = true;
-      return absl::OkStatus();
-    });
+    cluster_pre_->initialize([this] { initialized_ = true; });
   }
 
   void doOnConfigUpdateVerifyNoThrowPre(
@@ -3010,10 +2974,7 @@ public:
     eds_callbacks_post_ = server_context_.cluster_manager_.subscription_factory_.callbacks_;
 
     EXPECT_CALL(*server_context_.cluster_manager_.subscription_factory_.subscription_, start(_));
-    cluster_post_->initialize([this] {
-      initialized_post_ = true;
-      return absl::OkStatus();
-    });
+    cluster_post_->initialize([this] { initialized_post_ = true; });
   }
 
   // Used for timeout emulation.

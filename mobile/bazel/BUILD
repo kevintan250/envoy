@@ -21,13 +21,7 @@ alias(
 
 alias(
     name = "jni",
-    actual = "@rules_java//toolchains:jni",
-    visibility = ["//library/jni:__pkg__"],
-)
-
-alias(
-    name = "objc_dummy",
-    actual = "@bazel_tools//tools/objc:dummy.c",
+    actual = "@bazel_tools//tools/jdk:jni",
     visibility = ["//library/jni:__pkg__"],
 )
 

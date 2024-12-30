@@ -6,7 +6,7 @@ namespace Quic {
 namespace {
 quic::QuicSocketAddress ipOrAddressToAddress(const quic::QuicSocketAddress& address, int32_t port) {
   if (address.port() == 0) {
-    return {address.host(), static_cast<uint16_t>(port)};
+    return quic::QuicSocketAddress(address.host(), port);
   }
 
   return address;

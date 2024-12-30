@@ -38,7 +38,6 @@ MockUdpTunnelingConfig::~MockUdpTunnelingConfig() = default;
 
 MockTunnelCreationCallbacks::~MockTunnelCreationCallbacks() = default;
 MockUpstreamTunnelCallbacks::~MockUpstreamTunnelCallbacks() = default;
-MockHttpUpstream::~MockHttpUpstream() = default;
 MockHttpStreamCallbacks::~MockHttpStreamCallbacks() = default;
 
 } // namespace SessionFilters

@@ -50,7 +50,7 @@ FilterFactory::createFilterFactoryFromProtoTyped(const JwtAuthentication& proto_
   };
 }
 
-absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+Envoy::Router::RouteSpecificFilterConfigConstSharedPtr
 FilterFactory::createRouteSpecificFilterConfigTyped(
     const envoy::extensions::filters::http::jwt_authn::v3::PerRouteConfig& per_route,
     Envoy::Server::Configuration::ServerFactoryContext&,

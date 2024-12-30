@@ -25,8 +25,7 @@ private:
   absl::StatusOr<Http::FilterFactoryCb> createFilterFactoryFromProtoTyped(
       const envoy::extensions::filters::http::dynamic_forward_proxy::v3::FilterConfig& proto_config,
       const std::string& stats_prefix, Server::Configuration::FactoryContext& context) override;
-  absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
-  createRouteSpecificFilterConfigTyped(
+  Router::RouteSpecificFilterConfigConstSharedPtr createRouteSpecificFilterConfigTyped(
       const envoy::extensions::filters::http::dynamic_forward_proxy::v3::PerRouteConfig& config,
       Server::Configuration::ServerFactoryContext&, ProtobufMessage::ValidationVisitor&) override;
 };

@@ -37,11 +37,9 @@ TEST(CompressorFilterFactoryTests, EmptyPerRouteConfig) {
   envoy::extensions::filters::http::compressor::v3::CompressorPerRoute per_route;
   NiceMock<Server::Configuration::MockServerFactoryContext> context;
   CompressorFilterFactory factory;
-  EXPECT_THROW(
-      factory
-          .createRouteSpecificFilterConfig(per_route, context, context.messageValidationVisitor())
-          .value(),
-      ProtoValidationException);
+  EXPECT_THROW(factory.createRouteSpecificFilterConfig(per_route, context,
+                                                       context.messageValidationVisitor()),
+               ProtoValidationException);
 }
 
 } // namespace

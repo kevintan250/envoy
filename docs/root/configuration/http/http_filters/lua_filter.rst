@@ -372,7 +372,19 @@ to the next filter.
 
 Returns a :ref:`header object <config_http_filters_lua_header_wrapper>`.
 
-.. include:: ../../../_include/lua_common.rst
+``log*()``
+^^^^^^^^^^
+
+.. code-block:: lua
+
+  handle:logTrace(message)
+  handle:logDebug(message)
+  handle:logInfo(message)
+  handle:logWarn(message)
+  handle:logErr(message)
+  handle:logCritical(message)
+
+Logs a message using Envoy's application logging. *message* is a string to log.
 
 ``httpCall()``
 ^^^^^^^^^^^^^^
@@ -645,8 +657,6 @@ Default resolution is millisecond if *resolution* is not set.
 Header object API
 -----------------
 
-.. include:: ../../../_include/lua_common.rst
-
 ``add()``
 ^^^^^^^^^
 
@@ -743,8 +753,6 @@ effects HTTP/1 connections. It will have no effect if the client is HTTP/2 or HT
 Buffer API
 ----------
 
-.. include:: ../../../_include/lua_common.rst
-
 ``length()``
 ^^^^^^^^^^^^
 
@@ -782,8 +790,6 @@ Set the content of wrapped buffer with the input string.
 Metadata object API
 -------------------
 
-.. include:: ../../../_include/lua_common.rst
-
 ``get()``
 ^^^^^^^^^
 
@@ -810,8 +816,6 @@ key. *value* is a *metadata* entry value.
 
 Stream info object API
 -----------------------
-
-.. include:: ../../../_include/lua_common.rst
 
 ``protocol()``
 ^^^^^^^^^^^^^^
@@ -907,8 +911,6 @@ Returns the string representation of :repo:`requested server name <envoy/stream_
 Connection stream info object API
 ---------------------------------
 
-.. include:: ../../../_include/lua_common.rst
-
 ``dynamicMetadata()``
 ^^^^^^^^^^^^^^^^^^^^^
 
@@ -920,8 +922,6 @@ Returns a :ref:`dynamic metadata object <config_http_filters_lua_stream_info_dyn
 
 Dynamic metadata object API
 ---------------------------
-
-.. include:: ../../../_include/lua_common.rst
 
 ``get()``
 ^^^^^^^^^
@@ -980,8 +980,6 @@ key. *value* is a *dynamicMetadata* entry value.
 Connection object API
 ---------------------
 
-.. include:: ../../../_include/lua_common.rst
-
 ``ssl()``
 ^^^^^^^^^
 
@@ -1002,8 +1000,6 @@ Returns an :ref:`SSL connection info object <config_http_filters_lua_ssl_socket_
 
 SSL connection object API
 -------------------------
-
-.. include:: ../../../_include/lua_common.rst
 
 ``peerCertificatePresented()``
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1255,8 +1251,6 @@ Returns the TLS version (e.g., TLSv1.2, TLSv1.3) used in the established TLS con
 
 Parsed name object API
 ----------------------
-
-.. include:: ../../../_include/lua_common.rst
 
 ``commonName()``
 ^^^^^^^^^^^^^^^^

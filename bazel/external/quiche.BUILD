@@ -50,6 +50,7 @@ test_suite(
         "http2_adapter_nghttp2_adapter_test",
         "http2_adapter_nghttp2_data_provider_test",
         "http2_adapter_nghttp2_session_test",
+        "http2_adapter_nghttp2_util_test",
         "http2_adapter_oghttp2_adapter_test",
         "http2_adapter_oghttp2_session_test",
         "http2_adapter_oghttp2_util_test",
@@ -408,6 +409,19 @@ envoy_cc_library(
     ],
 )
 
+envoy_cc_test(
+    name = "http2_adapter_nghttp2_util_test",
+    srcs = ["quiche/http2/adapter/nghttp2_util_test.cc"],
+    copts = quiche_copts,
+    repository = "@envoy",
+    deps = [
+        ":http2_adapter_nghttp2_test_utils",
+        ":http2_adapter_nghttp2_util",
+        ":http2_adapter_test_utils",
+        ":quiche_common_platform_test",
+    ],
+)
+
 envoy_cc_library(
     name = "http2_adapter_oghttp2_adapter",
     srcs = [
@@ -648,8 +662,8 @@ envoy_cc_library(
 
 envoy_cc_library(
     name = "http2_constants_lib",
-    srcs = ["quiche/http2/core/http2_constants.cc"],
-    hdrs = ["quiche/http2/core/http2_constants.h"],
+    srcs = ["quiche/http2/http2_constants.cc"],
+    hdrs = ["quiche/http2/http2_constants.h"],
     copts = quiche_copts,
     repository = "@envoy",
     deps = [
@@ -660,8 +674,8 @@ envoy_cc_library(
 
 envoy_cc_library(
     name = "http2_structures_lib",
-    srcs = ["quiche/http2/core/http2_structures.cc"],
-    hdrs = ["quiche/http2/core/http2_structures.h"],
+    srcs = ["quiche/http2/http2_structures.cc"],
+    hdrs = ["quiche/http2/http2_structures.h"],
     copts = quiche_copts,
     repository = "@envoy",
     deps = [
@@ -3024,20 +3038,6 @@ envoy_cc_library(
     repository = "@envoy",
     deps = [
         ":quiche_common_platform_export",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/types:span",
-    ],
-)
-
-envoy_cc_library(
-    name = "quiche_common_quiche_vectorized_io_utils_lib",
-    srcs = ["quiche/common/vectorized_io_utils.cc"],
-    hdrs = ["quiche/common/vectorized_io_utils.h"],
-    copts = quiche_copts,
-    repository = "@envoy",
-    deps = [
-        ":quiche_common_platform_export",
-        "@com_google_absl//absl/base:prefetch",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
     ],
@@ -5565,7 +5565,6 @@ envoy_cc_library(
         ":quiche_common_callbacks",
         ":quiche_common_platform_export",
         ":quiche_common_quiche_stream_lib",
-        ":quiche_common_quiche_vectorized_io_utils_lib",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",

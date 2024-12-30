@@ -29,7 +29,7 @@ TEST(OpenTelemetryConfigTest, OpenTelemetrySinkType) {
     ProtobufTypes::MessagePtr message = factory->createEmptyConfigProto();
     TestUtility::jsonConvert(sink_config, *message);
 
-    EXPECT_THROW(factory->createStatsSink(*message, server).value(), ProtoValidationException);
+    EXPECT_THROW(factory->createStatsSink(*message, server), EnvoyException);
   }
 
   {
@@ -38,7 +38,7 @@ TEST(OpenTelemetryConfigTest, OpenTelemetrySinkType) {
     ProtobufTypes::MessagePtr message = factory->createEmptyConfigProto();
     TestUtility::jsonConvert(sink_config, *message);
 
-    Stats::SinkPtr sink = factory->createStatsSink(*message, server).value();
+    Stats::SinkPtr sink = factory->createStatsSink(*message, server);
     EXPECT_NE(sink, nullptr);
     EXPECT_NE(dynamic_cast<OpenTelemetry::OpenTelemetryGrpcSink*>(sink.get()), nullptr);
   }

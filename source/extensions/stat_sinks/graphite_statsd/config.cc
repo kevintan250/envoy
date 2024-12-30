@@ -15,7 +15,7 @@ namespace Extensions {
 namespace StatSinks {
 namespace GraphiteStatsd {
 
-absl::StatusOr<Stats::SinkPtr>
+Stats::SinkPtr
 GraphiteStatsdSinkFactory::createStatsSink(const Protobuf::Message& config,
                                            Server::Configuration::ServerFactoryContext& server) {
 
@@ -26,7 +26,7 @@ GraphiteStatsdSinkFactory::createStatsSink(const Protobuf::Message& config,
   case envoy::extensions::stat_sinks::graphite_statsd::v3::GraphiteStatsdSink::StatsdSpecifierCase::
       kAddress: {
     auto address_or_error = Network::Address::resolveProtoAddress(statsd_sink.address());
-    RETURN_IF_NOT_OK_REF(address_or_error.status());
+    THROW_IF_NOT_OK_REF(address_or_error.status());
     Network::Address::InstanceConstSharedPtr address = address_or_error.value();
     ENVOY_LOG(debug, "statsd UDP ip address: {}", address->asString());
     absl::optional<uint64_t> max_bytes;

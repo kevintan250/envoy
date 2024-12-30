@@ -31,7 +31,7 @@ private:
                                     const std::string& stats_prefix, DualInfo dual_info,
                                     Server::Configuration::ServerFactoryContext& context) override;
 
-  absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+  Router::RouteSpecificFilterConfigConstSharedPtr
   createRouteSpecificFilterConfigTyped(const AwsRequestSigningProtoPerRouteConfig& per_route_config,
                                        Server::Configuration::ServerFactoryContext& context,
                                        ProtobufMessage::ValidationVisitor&) override;

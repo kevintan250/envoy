@@ -44,19 +44,17 @@ public:
    * @param resource_type_url resource type URL for context parameter.
    * @param key parameter key.
    * @param value parameter value.
-   * @return if the update was successful.
    */
-  virtual absl::Status setDynamicContextParam(absl::string_view resource_type_url,
-                                              absl::string_view key, absl::string_view value) PURE;
+  virtual void setDynamicContextParam(absl::string_view resource_type_url, absl::string_view key,
+                                      absl::string_view value) PURE;
 
   /**
    * Unset a dynamic context parameter.
    * @param resource_type_url resource type URL for context parameter.
    * @param key parameter key.
-   * @return if the update was successful.
    */
-  virtual absl::Status unsetDynamicContextParam(absl::string_view resource_type_url,
-                                                absl::string_view key) PURE;
+  virtual void unsetDynamicContextParam(absl::string_view resource_type_url,
+                                        absl::string_view key) PURE;
 
   /**
    * Register a callback for notification when the dynamic context changes.

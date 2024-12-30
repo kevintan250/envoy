@@ -13,7 +13,7 @@ TEST(LocalInfoTest, DynamicContextUpdate) {
   Stats::TestUtil::TestSymbolTable symbol_table;
   LocalInfoImpl local_info(*symbol_table, {}, {}, nullptr, "zone_name", "cluster_name",
                            "node_name");
-  EXPECT_TRUE(local_info.contextProvider().setDynamicContextParam("foo", "bar", "baz").ok());
+  local_info.contextProvider().setDynamicContextParam("foo", "bar", "baz");
   EXPECT_EQ("baz", local_info.node().dynamic_parameters().at("foo").params().at("bar"));
 }
 

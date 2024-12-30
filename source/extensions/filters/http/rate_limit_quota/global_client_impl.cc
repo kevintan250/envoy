@@ -203,9 +203,8 @@ void GlobalRateLimitClientImpl::createBucketImpl(const BucketId& bucket_id, size
   sendUsageReportImpl(initial_report);
 
   writeBucketsToTLS();
-  if (callbacks_) {
+  if (callbacks_)
     callbacks_->onBucketCreated(buckets_cache_[id]->bucket_id, id);
-  }
 }
 
 // This helper function reads from the current usage caches & sends the
@@ -234,8 +233,7 @@ bool protoTokenBucketsEq(const ::envoy::type::v3::TokenBucket& new_tb,
 }
 
 std::shared_ptr<AtomicTokenBucketImpl>
-createTokenBucketFromAction(const RateLimitStrategy& strategy, TimeSource& time_source,
-                            const AtomicTokenBucketImpl* existing_token_bucket) {
+createTokenBucketFromAction(const RateLimitStrategy& strategy, TimeSource& time_source) {
   const auto& token_bucket = strategy.token_bucket();
   const auto& interval_proto = token_bucket.fill_interval();
   // Convert absl::duration to int64_t seconds
@@ -244,22 +242,13 @@ createTokenBucketFromAction(const RateLimitStrategy& strategy, TimeSource& time_
   double fill_rate_per_sec =
       static_cast<double>(token_bucket.tokens_per_fill().value()) / fill_interval_sec;
 
-  uint64_t max_tokens = token_bucket.max_tokens();
-  // Start the new token bucket with the same ratio of remaining tokens to max
-  // tokens as the existing token bucket (best effort).
-  uint64_t initial_tokens = (existing_token_bucket)
-                                ? max_tokens * (existing_token_bucket->remainingTokens() /
-                                                existing_token_bucket->maxTokens())
-                                : max_tokens;
-
-  return std::make_shared<AtomicTokenBucketImpl>(max_tokens, time_source, fill_rate_per_sec,
-                                                 initial_tokens);
+  return std::make_shared<AtomicTokenBucketImpl>(token_bucket.max_tokens(), time_source,
+                                                 fill_rate_per_sec);
 }
 
 void GlobalRateLimitClientImpl::onReceiveMessage(RateLimitQuotaResponsePtr&& response) {
-  if (!response) {
+  if (!response)
     return;
-  }
   main_dispatcher_.post(
       [&, response = std::move(response)]() { onQuotaResponseImpl(response.get()); });
 }
@@ -323,8 +312,8 @@ void GlobalRateLimitClientImpl::onQuotaResponseImpl(const RateLimitQuotaResponse
         // Only create a new TokenBucket if the configuration is new or
         // different from the cache.)
         if (shouldReplaceTokenBucket(cached_bucket.get(), rate_limit_strategy)) {
-          bucket->token_bucket_limiter = createTokenBucketFromAction(
-              rate_limit_strategy, time_source_, cached_bucket->token_bucket_limiter.get());
+          bucket->token_bucket_limiter =
+              createTokenBucketFromAction(rate_limit_strategy, time_source_);
           ENVOY_LOG(info,
                     "A new TokenBucket has been configured by the RLQS "
                     "filter for id: {}",
@@ -359,9 +348,8 @@ void GlobalRateLimitClientImpl::onQuotaResponseImpl(const RateLimitQuotaResponse
   }
   // Push updates to TLS.
   writeBucketsToTLS();
-  if (callbacks_) {
+  if (callbacks_)
     callbacks_->onQuotaResponseProcessed();
-  }
 }
 
 void GlobalRateLimitClientImpl::onRemoteClose(Grpc::Status::GrpcStatus status,
@@ -388,15 +376,13 @@ bool GlobalRateLimitClientImpl::startStreamImpl() {
 }
 
 void GlobalRateLimitClientImpl::startSendReportsTimerImpl() {
-  if (send_reports_timer_) {
+  if (send_reports_timer_)
     return;
-  }
   ENVOY_LOG(debug, "Start the usage reporting timer for the RLQS stream.");
   send_reports_timer_ = main_dispatcher_.createTimer([&]() {
     onSendReportsTimer();
-    if (callbacks_) {
+    if (callbacks_)
       callbacks_->onUsageReportsSent();
-    }
     send_reports_timer_->enableTimer(send_reports_interval_);
   });
   send_reports_timer_->enableTimer(send_reports_interval_);
@@ -420,9 +406,8 @@ void GlobalRateLimitClientImpl::startActionExpirationTimer(CachedBucket* cached_
   // Pointer safety as all writes are against the source-of-truth.
   cached_bucket->action_expiration_timer = main_dispatcher_.createTimer([&, id, cached_bucket]() {
     onActionExpirationTimer(cached_bucket, id);
-    if (callbacks_) {
+    if (callbacks_)
       callbacks_->onActionExpiration();
-    }
   });
   std::chrono::milliseconds ttl = std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::seconds(cached_bucket->cached_action->quota_assignment_action()
@@ -477,8 +462,7 @@ void GlobalRateLimitClientImpl::onActionExpirationTimer(CachedBucket* bucket, si
               "The cached token bucket at bucket id {} has been replaced by "
               "the configured fallback token bucket.",
               id);
-    new_token_bucket = createTokenBucketFromAction(fallback_action, time_source_,
-                                                   cached_bucket->token_bucket_limiter.get());
+    new_token_bucket = createTokenBucketFromAction(fallback_action, time_source_);
   } else if (fallback_action.has_token_bucket()) {
     ENVOY_LOG(debug,
               "The cached token bucket at bucket id {} is carrying over during "
@@ -509,9 +493,8 @@ void GlobalRateLimitClientImpl::startFallbackExpirationTimer(CachedBucket* cache
   // Pointer safety as all writes are against the source-of-truth.
   cached_bucket->fallback_expiration_timer = main_dispatcher_.createTimer([&, id, cached_bucket]() {
     onFallbackExpirationTimer(cached_bucket, id);
-    if (callbacks_) {
+    if (callbacks_)
       callbacks_->onFallbackExpiration();
-    }
   });
   cached_bucket->fallback_expiration_timer->enableTimer(cached_bucket->fallback_ttl);
 }

@@ -30,7 +30,7 @@ struct SupportedCommands {
         "lpush", "lpushx", "lrange", "lrem", "lset", "ltrim", "persist", "pexpire", "pexpireat",
         "pfadd", "pfcount", "psetex", "pttl", "publish", "restore", "rpop", "rpush", "rpushx",
         "sadd", "scard", "set", "setbit", "setex", "setnx", "setrange", "sismember", "smembers",
-        "spop", "srandmember", "srem", "sscan", "strlen", "ttl", "type", "xack", "xadd",
+        "spop", "srandmember", "srem", "sscan", "strlen", "ttl", "type", "watch", "xack", "xadd",
         "xautoclaim", "xclaim", "xdel", "xlen", "xpending", "xrange", "xrevrange", "xtrim", "zadd",
         "zcard", "zcount", "zincrby", "zlexcount", "zpopmin", "zpopmax", "zrange", "zrangebylex",
         "zrangebyscore", "zrank", "zrem", "zremrangebylex", "zremrangebyrank", "zremrangebyscore",
@@ -55,8 +55,7 @@ struct SupportedCommands {
    * @return commands which handle Redis transactions.
    */
   static const absl::flat_hash_set<std::string>& transactionCommands() {
-    CONSTRUCT_ON_FIRST_USE(absl::flat_hash_set<std::string>, "multi", "exec", "discard", "watch",
-                           "unwatch");
+    CONSTRUCT_ON_FIRST_USE(absl::flat_hash_set<std::string>, "multi", "exec", "discard");
   }
 
   /**
@@ -65,7 +64,7 @@ struct SupportedCommands {
   static const std::string& auth() { CONSTRUCT_ON_FIRST_USE(std::string, "auth"); }
 
   /**
-   * @return echo command
+   * @return auth command
    */
   static const std::string& echo() { CONSTRUCT_ON_FIRST_USE(std::string, "echo"); }
 
@@ -78,11 +77,6 @@ struct SupportedCommands {
    * @return mset command
    */
   static const std::string& mset() { CONSTRUCT_ON_FIRST_USE(std::string, "mset"); }
-
-  /**
-   * @return keys command
-   */
-  static const std::string& keys() { CONSTRUCT_ON_FIRST_USE(std::string, "keys"); }
 
   /**
    * @return ping command
@@ -98,11 +92,6 @@ struct SupportedCommands {
    * @return quit command
    */
   static const std::string& quit() { CONSTRUCT_ON_FIRST_USE(std::string, "quit"); }
-
-  /**
-   * @return select command
-   */
-  static const std::string& select() { CONSTRUCT_ON_FIRST_USE(std::string, "select"); }
 
   /**
    * @return commands which alters the state of redis
@@ -121,14 +110,6 @@ struct SupportedCommands {
 
   static bool isReadCommand(const std::string& command) {
     return !writeCommands().contains(command);
-  }
-
-  static bool isSupportedCommand(const std::string& command) {
-    return (simpleCommands().contains(command) || evalCommands().contains(command) ||
-            hashMultipleSumResultCommands().contains(command) ||
-            transactionCommands().contains(command) || auth() == command || echo() == command ||
-            mget() == command || mset() == command || keys() == command || ping() == command ||
-            time() == command || quit() == command || select() == command);
   }
 };
 

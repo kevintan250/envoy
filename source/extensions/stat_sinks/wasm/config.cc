@@ -14,7 +14,7 @@ namespace Extensions {
 namespace StatSinks {
 namespace Wasm {
 
-absl::StatusOr<Stats::SinkPtr>
+Stats::SinkPtr
 WasmSinkFactory::createStatsSink(const Protobuf::Message& proto_config,
                                  Server::Configuration::ServerFactoryContext& context) {
   const auto& config =

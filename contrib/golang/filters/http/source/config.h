@@ -32,8 +32,7 @@ private:
       const std::string& stats_prefix,
       Server::Configuration::FactoryContext& factory_context) override;
 
-  absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
-  createRouteSpecificFilterConfigTyped(
+  Router::RouteSpecificFilterConfigConstSharedPtr createRouteSpecificFilterConfigTyped(
       const envoy::extensions::filters::http::golang::v3alpha::ConfigsPerRoute& proto_config,
       Server::Configuration::ServerFactoryContext& context,
       ProtobufMessage::ValidationVisitor& validator) override;

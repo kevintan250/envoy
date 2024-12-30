@@ -18,9 +18,8 @@ constexpr char OpenTelemetryName[] = "envoy.stat_sinks.open_telemetry";
 class OpenTelemetrySinkFactory : Logger::Loggable<Logger::Id::config>,
                                  public Server::Configuration::StatsSinkFactory {
 public:
-  absl::StatusOr<Stats::SinkPtr>
-  createStatsSink(const Protobuf::Message& config,
-                  Server::Configuration::ServerFactoryContext& server) override;
+  Stats::SinkPtr createStatsSink(const Protobuf::Message& config,
+                                 Server::Configuration::ServerFactoryContext& server) override;
 
   ProtobufTypes::MessagePtr createEmptyConfigProto() override;
 

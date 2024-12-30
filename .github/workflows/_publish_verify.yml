@@ -44,6 +44,7 @@ jobs:
       downloads: ${{ matrix.downloads }}
       rbe: ${{ matrix.rbe }}
       request: ${{ inputs.request }}
+      runs-on: ubuntu-24.04
       steps-pre: ${{ matrix.steps-pre }}
       source: ${{ matrix.source }}
       target: ${{ matrix.target }}
@@ -103,7 +104,7 @@ jobs:
       gcs-cache-bucket: ${{ inputs.gcs-cache-bucket }}
       rbe: ${{ matrix.rbe && matrix.rbe || false }}
       request: ${{ inputs.request }}
-      runs-on: ${{ matrix.runs-on }}
+      runs-on: ${{ matrix.runs-on || 'ubuntu-24.04' }}
       source: |
         export NO_BUILD_SETUP=1
         export ENVOY_DOCKER_IN_DOCKER=1

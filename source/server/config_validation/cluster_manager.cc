@@ -8,15 +8,13 @@
 namespace Envoy {
 namespace Upstream {
 
-absl::StatusOr<ClusterManagerPtr> ValidationClusterManagerFactory::clusterManagerFromProto(
+ClusterManagerPtr ValidationClusterManagerFactory::clusterManagerFromProto(
     const envoy::config::bootstrap::v3::Bootstrap& bootstrap) {
-  absl::Status creation_status = absl::OkStatus();
   auto cluster_manager = std::unique_ptr<ValidationClusterManager>{new ValidationClusterManager(
       bootstrap, *this, context_, stats_, tls_, context_.runtime(), context_.localInfo(),
       context_.accessLogManager(), context_.mainThreadDispatcher(), context_.admin(),
       context_.messageValidationContext(), context_.api(), http_context_, context_.grpcContext(),
-      context_.routerContext(), server_, creation_status)};
-  RETURN_IF_NOT_OK(creation_status);
+      context_.routerContext(), server_)};
   return cluster_manager;
 }
 

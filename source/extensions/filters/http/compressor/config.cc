@@ -35,7 +35,7 @@ absl::StatusOr<Http::FilterFactoryCb> CompressorFilterFactory::createFilterFacto
   };
 }
 
-absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
+Router::RouteSpecificFilterConfigConstSharedPtr
 CompressorFilterFactory::createRouteSpecificFilterConfigTyped(
     const envoy::extensions::filters::http::compressor::v3::CompressorPerRoute& proto_config,
     Server::Configuration::ServerFactoryContext&, ProtobufMessage::ValidationVisitor&) {

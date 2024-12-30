@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 import pathlib
-import platform
 import shlex
 import shutil
 import subprocess
@@ -76,7 +75,7 @@ def gdb_config(target, binary, workspace, execroot, arguments):
 
 
 def lldb_config(target, binary, workspace, execroot, arguments):
-    cfg = {
+    return {
         "name": "lldb " + target,
         "program": str(binary),
         "sourceMap": {
@@ -89,13 +88,6 @@ def lldb_config(target, binary, workspace, execroot, arguments):
         "type": "lldb",
         "request": "launch"
     }
-
-    # https://github.com/vadimcn/codelldb/discussions/517
-    if platform.system() == "Darwin" and platform.machine() == "arm64":
-        cfg["sourceMap"] = {
-            ".": "${workspaceFolder}",
-        }
-    return cfg
 
 
 def add_to_launch_json(target, binary, workspace, execroot, arguments, debugger_type, overwrite):

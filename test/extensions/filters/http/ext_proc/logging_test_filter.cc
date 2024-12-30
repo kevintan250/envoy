@@ -39,7 +39,6 @@ public:
       }
       ASSERT_TRUE(ext_proc_logging_info->upstreamHost() != nullptr);
       EXPECT_EQ(ext_proc_logging_info->upstreamHost()->cluster().name(), expected_cluster_name_);
-      EXPECT_EQ(ext_proc_logging_info->clusterInfo()->name(), expected_cluster_name_);
     }
   }
 

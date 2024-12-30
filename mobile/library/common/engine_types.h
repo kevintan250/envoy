@@ -138,12 +138,12 @@ struct EnvoyStreamCallbacks {
 
 /** Networks classified by the physical link. */
 enum class NetworkType : int {
-  // This includes VPN or cases where network characteristics are unknown.
-  Generic = 1, // 001
+  // This is the default and includes cases where network characteristics are unknown.
+  Generic = 0,
   // This includes WiFi and other local area wireless networks.
-  WLAN = 2, // 010
+  WLAN = 1,
   // This includes all mobile phone networks.
-  WWAN = 4, // 100
+  WWAN = 2,
 };
 
 } // namespace Envoy

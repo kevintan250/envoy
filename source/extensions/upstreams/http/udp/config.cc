@@ -9,10 +9,10 @@ namespace Http {
 namespace Udp {
 
 Router::GenericConnPoolPtr UdpGenericConnPoolFactory::createGenericConnPool(
-    Upstream::HostConstSharedPtr host, Upstream::ThreadLocalCluster&,
+    Upstream::ThreadLocalCluster& thread_local_cluster,
     Router::GenericConnPoolFactory::UpstreamProtocol, Upstream::ResourcePriority,
-    absl::optional<Envoy::Http::Protocol>, Upstream::LoadBalancerContext*) const {
-  auto ret = std::make_unique<UdpConnPool>(host);
+    absl::optional<Envoy::Http::Protocol>, Upstream::LoadBalancerContext* ctx) const {
+  auto ret = std::make_unique<UdpConnPool>(thread_local_cluster, ctx);
   return (ret->valid() ? std::move(ret) : nullptr);
 }
 

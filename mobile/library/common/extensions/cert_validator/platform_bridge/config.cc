@@ -7,10 +7,10 @@ namespace Extensions {
 namespace TransportSockets {
 namespace Tls {
 
-absl::StatusOr<CertValidatorPtr> PlatformBridgeCertValidatorFactory::createCertValidator(
+CertValidatorPtr PlatformBridgeCertValidatorFactory::createCertValidator(
     const Envoy::Ssl::CertificateValidationContextConfig* config, SslStats& stats,
     Server::Configuration::CommonFactoryContext& /*context*/) {
-  return PlatformBridgeCertValidator::create(config, stats);
+  return std::make_unique<PlatformBridgeCertValidator>(config, stats);
 }
 
 REGISTER_FACTORY(PlatformBridgeCertValidatorFactory, CertValidatorFactory);

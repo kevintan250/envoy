@@ -25,8 +25,7 @@ private:
       const envoy::extensions::filters::http::jwt_authn::v3::JwtAuthentication& proto_config,
       const std::string& stats_prefix, Server::Configuration::FactoryContext& context) override;
 
-  absl::StatusOr<Router::RouteSpecificFilterConfigConstSharedPtr>
-  createRouteSpecificFilterConfigTyped(
+  Envoy::Router::RouteSpecificFilterConfigConstSharedPtr createRouteSpecificFilterConfigTyped(
       const envoy::extensions::filters::http::jwt_authn::v3::PerRouteConfig& per_route,
       Envoy::Server::Configuration::ServerFactoryContext&,
       Envoy::ProtobufMessage::ValidationVisitor&) override;
