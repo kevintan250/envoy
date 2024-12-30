@@ -16,11 +16,11 @@ namespace Extensions {
 namespace Tracers {
 namespace OpenTelemetry {
 
-
+// Configure with only required fields
 TEST(FluentdTracerConfigTest, FluentdTracerMinimalConfig) {
     NiceMock<Server::Configuration::MockTracerFactoryContext> context;
     context.server_factory_context_.cluster_manager_.initializeClusters({"fake_cluster"}, {});
-    FluentdTracerFactory factory;
+    Envoy::Extensions::Tracers::Fluentd::FluentdTracerFactory factory;
 
     const std::string yaml_json = R"EOF(
       http:
@@ -40,10 +40,11 @@ TEST(FluentdTracerConfigTest, FluentdTracerMinimalConfig) {
     EXPECT_NE(nullptr, fluentd_tracer);
 }
 
+// Configure with all fields
 TEST(FluentdTracerConfigTest, FluentdTracerFullConfig) {
     NiceMock<Server::Configuration::MockTracerFactoryContext> context;
     context.server_factory_context_.cluster_manager_.initializeClusters({"fake_cluster"}, {});
-    FluentdTracerFactory factory;
+    Envoy::Extensions::Tracers::Fluentd::FluentdTracerFactory factory;
 
     const std::string yaml_json = R"EOF(
       http:

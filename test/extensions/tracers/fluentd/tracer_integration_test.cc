@@ -19,6 +19,8 @@ namespace Extensions {
 namespace Tracers {
 namespace Fluentd {
 
+// Tests adapted from test/extensions/tracers/opentelemetry @alexanderellis @yanavlasov
+
 class FluentdTracerIntegrationTest : public testing::Test {
 public:
     FluentdTracerIntegrationTest() {
@@ -55,6 +57,7 @@ protected:
       NiceMock<Envoy::Tracing::MockConfig> mock_tracing_config_;
 };
 
+// Test the creation of the FluentdTracerImpl object.
 TEST_F(FluentdTracerIntegrationTest, Breathing) {
     auto* cluster = cluster_manager_.getThreadLocalCluster("fake_cluster");
 
@@ -65,13 +68,14 @@ TEST_F(FluentdTracerIntegrationTest, Breathing) {
     EXPECT_NE(nullptr, tracer_);
 }
 
+// Test the creation of a span with a parent span context.
 TEST_F(FluentdTracerIntegrationTest, ParseSpanContextFromHeadersTest) {
-    auto* cluster = cluster_manager_.getThreadLocalCluster("fake_cluster");
-
     // Mock the random call for generating span ID so we can check it later.
     const uint64_t new_span_id = 3;
     ON_CALL(random_, random()).WillByDefault(testing::Return(new_span_id));
 
+    // Make the tracer
+    auto* cluster = cluster_manager_.getThreadLocalCluster("fake_cluster");
     auto client = std::make_unique<NiceMock<Envoy::Tcp::AsyncClient::MockAsyncTcpClient>>();
     auto backoff_strategy = std::make_unique<JitteredExponentialBackOffStrategy>(1000, 10000, random_);
 
@@ -81,6 +85,7 @@ TEST_F(FluentdTracerIntegrationTest, ParseSpanContextFromHeadersTest) {
 
     EXPECT_NE(nullptr, tracer_);
     
+    // Create the trace context
     Tracing::TestTraceContextImpl trace_context{
         {":authority", "test.com"}, {":path", "/"}, {":method", "GET"}};
 
@@ -97,23 +102,19 @@ TEST_F(FluentdTracerIntegrationTest, ParseSpanContextFromHeadersTest) {
     trace_context.set(FluentdConstants::get().TRACE_PARENT.key(), parent_trace_header);
     trace_context.set(FluentdConstants::get().TRACE_STATE.key(), "test=foo");
 
-    // make a spancontext
+    // Make the span context
     SpanContext span_context(version, trace_id_hex, Hex::uint64ToHex(parent_span_id), true, "test=foo");
 
+    // Set span info
     Tracing::Decision decision;
     decision.reason = Tracing::Reason::Sampling;
     decision.traced = false;
-
     const std::string operation_name = "do.thing";
     const SystemTime start = time_.timeSystem().systemTime(); 
     ON_CALL(stream_info_, startTime()).WillByDefault(testing::Return(start));
 
-    ASSERT_EQ("do.thing", operation_name);
-    ASSERT_EQ(start, time_.timeSystem().systemTime());
-
-    // check the type of the tracer_ pointer
+    // Make the span
     const auto as_fluentd_tracer = dynamic_cast<FluentdTracerImpl*>(tracer_.get());
-    
     auto span = as_fluentd_tracer->startSpan(trace_context, start, operation_name, decision, span_context);
 
     ASSERT_TRUE(span);
@@ -126,6 +127,7 @@ TEST_F(FluentdTracerIntegrationTest, ParseSpanContextFromHeadersTest) {
 
     span->injectContext(trace_context, Tracing::UpstreamContext());
 
+    // Check the headers
     auto sampled_entry = trace_context.get(FluentdConstants::get().TRACE_PARENT.key());
     EXPECT_TRUE(sampled_entry.has_value());
     EXPECT_EQ(sampled_entry.value(), absl::StrJoin({version, trace_id_hex, Hex::uint64ToHex(new_span_id), trace_flags}, "-"));
@@ -139,9 +141,8 @@ TEST_F(FluentdTracerIntegrationTest, ParseSpanContextFromHeadersTest) {
     EXPECT_EQ(1U, stats_.counter("envoy.tracers.fluentd.entries_buffered").value());
 }
 
+// Test the creation of a span without a parent span context.
 TEST_F(FluentdTracerIntegrationTest, GenerateSpanContextWithoutHeadersTest) {
-    auto* cluster = cluster_manager_.getThreadLocalCluster("fake_cluster");
-
     // Mock the random call for generating trace and span IDs so we can check it later.
     const uint64_t trace_id_high = 1;
     const uint64_t trace_id_low = 2;
@@ -154,6 +155,8 @@ TEST_F(FluentdTracerIntegrationTest, GenerateSpanContextWithoutHeadersTest) {
         EXPECT_CALL(random_, random()).WillOnce(testing::Return(new_span_id));
     }
 
+    // Make the tracer
+    auto* cluster = cluster_manager_.getThreadLocalCluster("fake_cluster");
     auto client = std::make_unique<NiceMock<Envoy::Tcp::AsyncClient::MockAsyncTcpClient>>();
     auto backoff_strategy = std::make_unique<JitteredExponentialBackOffStrategy>(1000, 10000, random_);
 
@@ -163,32 +166,32 @@ TEST_F(FluentdTracerIntegrationTest, GenerateSpanContextWithoutHeadersTest) {
 
     EXPECT_NE(nullptr, tracer_);
     
+    // Create the trace context
     Tracing::TestTraceContextImpl trace_context{
         {":authority", "test.com"}, {":path", "/"}, {":method", "GET"}};
 
+    // Set span info
     Tracing::Decision decision = {Tracing::Reason::Sampling, true};
-
     const std::string operation_name = "do.thing";
     const SystemTime start = time_.timeSystem().systemTime(); 
     ON_CALL(stream_info_, startTime()).WillByDefault(testing::Return(start));
 
-    ASSERT_EQ("do.thing", operation_name);
-    ASSERT_EQ(start, time_.timeSystem().systemTime());
-
-    // check the type of the tracer_ pointer
+    // Make the span
     const auto as_fluentd_tracer = dynamic_cast<FluentdTracerImpl*>(tracer_.get());
-    
     auto span = as_fluentd_tracer->startSpan(trace_context, start, operation_name, decision);
 
+    // Remove headers, then inject context into header from the span.
     trace_context.remove(FluentdConstants::get().TRACE_PARENT.key());
     span->injectContext(trace_context, Tracing::UpstreamContext());
 
+    // Check the headers
     auto sampled_entry = trace_context.get(FluentdConstants::get().TRACE_PARENT.key());
 
     EXPECT_TRUE(sampled_entry.has_value());
     EXPECT_EQ(sampled_entry.value(), "00-00000000000000010000000000000002-0000000000000003-01");
 }
 
+// Test that an invalid trace context will be flagged by the span context extractor.
 TEST_F(FluentdTracerIntegrationTest, NullSpanWithPropagationHeaderError) {    
     // Add an invalid OTLP header to the request headers.
     Tracing::TestTraceContextImpl trace_context{
@@ -201,9 +204,8 @@ TEST_F(FluentdTracerIntegrationTest, NullSpanWithPropagationHeaderError) {
     EXPECT_FALSE(extractor.extractSpanContext().ok());
 }
 
+// Test the creation of a child span
 TEST_F(FluentdTracerIntegrationTest, SpawnChildSpan) {
-    auto* cluster = cluster_manager_.getThreadLocalCluster("fake_cluster");
-
     // Mock the random call for generating trace and span IDs so we can check it later.
     const uint64_t trace_id_high = 0;
     const uint64_t trace_id_low = 2;
@@ -215,7 +217,8 @@ TEST_F(FluentdTracerIntegrationTest, SpawnChildSpan) {
         EXPECT_CALL(random_, random()).WillOnce(testing::Return(trace_id_low));
         EXPECT_CALL(random_, random()).WillOnce(testing::Return(new_span_id));
     }
-
+    // Make the tracer
+    auto* cluster = cluster_manager_.getThreadLocalCluster("fake_cluster");
     auto client = std::make_unique<NiceMock<Envoy::Tcp::AsyncClient::MockAsyncTcpClient>>();
     auto backoff_strategy = std::make_unique<JitteredExponentialBackOffStrategy>(1000, 10000, random_);
 
@@ -225,21 +228,18 @@ TEST_F(FluentdTracerIntegrationTest, SpawnChildSpan) {
 
     EXPECT_NE(nullptr, tracer_);
     
+    // Create the trace context
     Tracing::TestTraceContextImpl trace_context{
         {":authority", "test.com"}, {":path", "/"}, {":method", "GET"}};
 
+    // Set span info
     Tracing::Decision decision = {Tracing::Reason::Sampling, true};
-
     const std::string operation_name = "do.thing";
     const SystemTime start = time_.timeSystem().systemTime(); 
     ON_CALL(stream_info_, startTime()).WillByDefault(testing::Return(start));
 
-    ASSERT_EQ("do.thing", operation_name);
-    ASSERT_EQ(start, time_.timeSystem().systemTime());
-
-    // check the type of the tracer_ pointer
+    // Make the span
     const auto as_fluentd_tracer = dynamic_cast<FluentdTracerImpl*>(tracer_.get());
-    
     auto span = as_fluentd_tracer->startSpan(trace_context, start, operation_name, decision);
 
     EXPECT_NE(span.get(), nullptr);
@@ -259,4 +259,3 @@ TEST_F(FluentdTracerIntegrationTest, SpawnChildSpan) {
 } // namespace Tracers
 } // namespace Extensions
 } // namespace Envoy
-
