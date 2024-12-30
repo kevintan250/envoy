@@ -112,7 +112,8 @@ absl::StatusOr<SpanContext> SpanContextExtractor::extractSpanContext() {
   return span_context;
 }
 
-// Define default version and trace context construction// Define default version and trace context construction
+// Define default version and trace context construction// Define default version and trace context
+// construction
 constexpr absl::string_view kDefaultVersion = "00";
 
 const Tracing::TraceContextHandler& traceParentHeader() {
