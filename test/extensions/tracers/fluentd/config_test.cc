@@ -1,6 +1,6 @@
-#include "envoy/config/trace/v3/http_tracer.pb.h"
 #include "envoy/config/trace/v3/fluentd.pb.h"
 #include "envoy/config/trace/v3/fluentd.pb.validate.h"
+#include "envoy/config/trace/v3/http_tracer.pb.h"
 #include "envoy/registry/registry.h"
 
 #include "source/extensions/tracers/fluentd/config.h"
@@ -18,11 +18,11 @@ namespace OpenTelemetry {
 
 // Configure with only required fields
 TEST(FluentdTracerConfigTest, FluentdTracerMinimalConfig) {
-    NiceMock<Server::Configuration::MockTracerFactoryContext> context;
-    context.server_factory_context_.cluster_manager_.initializeClusters({"fake_cluster"}, {});
-    Envoy::Extensions::Tracers::Fluentd::FluentdTracerFactory factory;
+  NiceMock<Server::Configuration::MockTracerFactoryContext> context;
+  context.server_factory_context_.cluster_manager_.initializeClusters({"fake_cluster"}, {});
+  Envoy::Extensions::Tracers::Fluentd::FluentdTracerFactory factory;
 
-    const std::string yaml_json = R"EOF(
+  const std::string yaml_json = R"EOF(
       http:
         name: envoy.tracers.fluentd
         typed_config:
@@ -31,22 +31,22 @@ TEST(FluentdTracerConfigTest, FluentdTracerMinimalConfig) {
           tag: "fake_tag"
           stat_prefix: "envoy.tracers.fluentd"
     )EOF";
-    envoy::config::trace::v3::Tracing configuration;
-    TestUtility::loadFromYaml(yaml_json, configuration);
+  envoy::config::trace::v3::Tracing configuration;
+  TestUtility::loadFromYaml(yaml_json, configuration);
 
-    auto message = Config::Utility::translateToFactoryConfig(
-        configuration.http(), ProtobufMessage::getStrictValidationVisitor(), factory);
-    auto fluentd_tracer = factory.createTracerDriver(*message, context);
-    EXPECT_NE(nullptr, fluentd_tracer);
+  auto message = Config::Utility::translateToFactoryConfig(
+      configuration.http(), ProtobufMessage::getStrictValidationVisitor(), factory);
+  auto fluentd_tracer = factory.createTracerDriver(*message, context);
+  EXPECT_NE(nullptr, fluentd_tracer);
 }
 
 // Configure with all fields
 TEST(FluentdTracerConfigTest, FluentdTracerFullConfig) {
-    NiceMock<Server::Configuration::MockTracerFactoryContext> context;
-    context.server_factory_context_.cluster_manager_.initializeClusters({"fake_cluster"}, {});
-    Envoy::Extensions::Tracers::Fluentd::FluentdTracerFactory factory;
+  NiceMock<Server::Configuration::MockTracerFactoryContext> context;
+  context.server_factory_context_.cluster_manager_.initializeClusters({"fake_cluster"}, {});
+  Envoy::Extensions::Tracers::Fluentd::FluentdTracerFactory factory;
 
-    const std::string yaml_json = R"EOF(
+  const std::string yaml_json = R"EOF(
       http:
         name: envoy.tracers.fluentd
         typed_config:
@@ -62,15 +62,15 @@ TEST(FluentdTracerConfigTest, FluentdTracerFullConfig) {
               base_interval: 0.5s
               max_interval: 5s
     )EOF";
-    envoy::config::trace::v3::Tracing configuration;
-    TestUtility::loadFromYaml(yaml_json, configuration);
+  envoy::config::trace::v3::Tracing configuration;
+  TestUtility::loadFromYaml(yaml_json, configuration);
 
-    auto message = Config::Utility::translateToFactoryConfig(
-        configuration.http(), ProtobufMessage::getStrictValidationVisitor(), factory);
-    auto fluentd_tracer = factory.createTracerDriver(*message, context);
-    EXPECT_NE(nullptr, fluentd_tracer);
+  auto message = Config::Utility::translateToFactoryConfig(
+      configuration.http(), ProtobufMessage::getStrictValidationVisitor(), factory);
+  auto fluentd_tracer = factory.createTracerDriver(*message, context);
+  EXPECT_NE(nullptr, fluentd_tracer);
 }
-     
+
 } // namespace OpenTelemetry
 } // namespace Tracers
 } // namespace Extensions
