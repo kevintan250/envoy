@@ -20,6 +20,8 @@ using MessagePackPacker = msgpack::packer<msgpack::sbuffer>;
 
 // Handle Span and Trace context extraction and validation
 // Adapted from extensions/tracers/opentelemetry @alexanderellis @yanavlasov
+// Handle Span and Trace context extraction and validation
+// Adapted from extensions/tracers/opentelemetry @alexanderellis @yanavlasov
 // See https://www.w3.org/TR/trace-context/#traceparent-header
 constexpr int kTraceparentHeaderSize = 55; // 2 + 1 + 32 + 1 + 16 + 1 + 2
 constexpr int kVersionHexSize = 2;
@@ -110,7 +112,7 @@ absl::StatusOr<SpanContext> SpanContextExtractor::extractSpanContext() {
   return span_context;
 }
 
-// Define default version and trace context construction
+// Define default version and trace context construction// Define default version and trace context construction
 constexpr absl::string_view kDefaultVersion = "00";
 
 const Tracing::TraceContextHandler& traceParentHeader() {
@@ -122,17 +124,20 @@ const Tracing::TraceContextHandler& traceStateHeader() {
 }
 
 // Initialize the Fluentd driver
+// Initialize the Fluentd driver
 Driver::Driver(const FluentdConfigSharedPtr fluentd_config,
                Server::Configuration::TracerFactoryContext& context,
                FluentdTracerCacheSharedPtr tracer_cache)
     : tls_slot_(context.serverFactoryContext().threadLocal().allocateSlot()),
       fluentd_config_(fluentd_config), tracer_cache_(tracer_cache) {
   Random::RandomGenerator& random = context.serverFactoryContext().api().randomGenerator();
+  TimeSource& time_source = context.serverFactoryContext().timeSource();
+
   // Create a thread local tracer
-  tls_slot_->set([fluentd_config = fluentd_config_, &random,
+  tls_slot_->set([fluentd_config = fluentd_config_, &random, &time_source,
                   tracer_cache = tracer_cache_](Event::Dispatcher&) {
     return std::make_shared<ThreadLocalTracer>(
-        tracer_cache->getOrCreateTracer(fluentd_config, random));
+        tracer_cache->getOrCreateTracer(fluentd_config, random, time_source));
   });
 }
 
@@ -172,7 +177,8 @@ FluentdTracerImpl::FluentdTracerImpl(Upstream::ThreadLocalCluster& cluster,
                                      Tcp::AsyncTcpClientPtr client, Event::Dispatcher& dispatcher,
                                      const FluentdConfig& config,
                                      BackOffStrategyPtr backoff_strategy,
-                                     Stats::Scope& parent_scope, Random::RandomGenerator& random)
+                                     Stats::Scope& parent_scope, Random::RandomGenerator& random,
+                                     TimeSource& time_source)
     : tag_(config.tag()), id_(dispatcher.name()),
       max_connect_attempts_(
           config.has_retry_options() && config.retry_options().has_max_connect_attempts()
@@ -192,7 +198,8 @@ FluentdTracerImpl::FluentdTracerImpl(Upstream::ThreadLocalCluster& cluster,
         flush();
         flush_timer_->enableTimer(buffer_flush_interval_msec_);
       })),
-      option_({{"fluent_signal", "2"}, {"TimeFormat", "DateTime"}}), random_(random) {
+      option_({{"fluent_signal", "2"}, {"TimeFormat", "DateTime"}}), random_(random),
+      time_source_(time_source) {
 
   client_->setAsyncTcpClientCallbacks(*this);
   flush_timer_->enableTimer(buffer_flush_interval_msec_);
@@ -218,9 +225,9 @@ void Span::setTag(absl::string_view name, absl::string_view value) {
 
 // Log an event as a Fluentd entry
 void Span::log(SystemTime timestamp, const std::string& event) {
-  uint64_t time = std::chrono::duration_cast<std::chrono::seconds>(
-                      std::chrono::system_clock::now().time_since_epoch())
-                      .count();
+  uint64_t time =
+      std::chrono::duration_cast<std::chrono::seconds>(time_source_.systemTime().time_since_epoch())
+          .count();
 
   EntryPtr entry =
       std::make_unique<Entry>(time, std::map<std::string, std::string>{{"event", event}});
@@ -230,9 +237,9 @@ void Span::log(SystemTime timestamp, const std::string& event) {
 
 // Finish and log a span as a Fluentd entry
 void Span::finishSpan() {
-  uint64_t time = std::chrono::duration_cast<std::chrono::seconds>(
-                      std::chrono::system_clock::now().time_since_epoch())
-                      .count();
+  uint64_t time =
+      std::chrono::duration_cast<std::chrono::seconds>(time_source_.systemTime().time_since_epoch())
+          .count();
 
   // Make the record map
   std::map<std::string, std::string> record_map;
@@ -467,9 +474,8 @@ FluentdTracerCacheImpl::FluentdTracerCacheImpl(Upstream::ClusterManager& cluster
 }
 
 // Handle Fluentd tracer retrieval or creation
-FluentdTracerSharedPtr
-FluentdTracerCacheImpl::getOrCreateTracer(const FluentdConfigSharedPtr config,
-                                          Random::RandomGenerator& random) {
+FluentdTracerSharedPtr FluentdTracerCacheImpl::getOrCreateTracer(
+    const FluentdConfigSharedPtr config, Random::RandomGenerator& random, TimeSource& time_source) {
   auto& cache = tls_slot_->getTyped<ThreadLocalCache>();
   const auto cache_key = MessageUtil::hash(*config);
   const auto it = cache.tracers_.find(cache_key);
@@ -499,9 +505,9 @@ FluentdTracerCacheImpl::getOrCreateTracer(const FluentdConfigSharedPtr config,
   BackOffStrategyPtr backoff_strategy = std::make_unique<JitteredExponentialBackOffStrategy>(
       base_interval_ms, max_interval_ms, random);
 
-  const auto tracer =
-      std::make_shared<FluentdTracerImpl>(*cluster, std::move(client), cache.dispatcher_, *config,
-                                          std::move(backoff_strategy), *stats_scope_, random);
+  const auto tracer = std::make_shared<FluentdTracerImpl>(
+      *cluster, std::move(client), cache.dispatcher_, *config, std::move(backoff_strategy),
+      *stats_scope_, random, time_source);
   cache.tracers_.emplace(cache_key, tracer);
   return tracer;
 }
