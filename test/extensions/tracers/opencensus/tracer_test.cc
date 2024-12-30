@@ -99,7 +99,7 @@ void registerSpanCatcher() {
 
 // Create a Span via the driver, test all of the Tracing::Span API, and verify
 // the produced SpanData.
-TEST(OpenCensusTracerTest, Span) { 
+TEST(OpenCensusTracerTest, Span) {
   registerSpanCatcher();
   OpenCensusConfig oc_config;
   NiceMock<Server::Configuration::MockServerFactoryContext> context;

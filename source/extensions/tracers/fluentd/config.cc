@@ -17,12 +17,13 @@ namespace Fluentd {
 // Singleton registration via macro defined in envoy/singleton/manager.h
 SINGLETON_MANAGER_REGISTRATION(fluentd_tracer_cache);
 
-FluentdTracerCacheSharedPtr FluentdTracerFactory::getTracerCacheSingleton(Server::Configuration::ServerFactoryContext& context) {
+FluentdTracerCacheSharedPtr FluentdTracerFactory::getTracerCacheSingleton(
+    Server::Configuration::ServerFactoryContext& context) {
   return context.singletonManager().getTyped<FluentdTracerCacheImpl>(
       SINGLETON_MANAGER_REGISTERED_NAME(fluentd_tracer_cache),
       [&context] {
         return std::make_shared<FluentdTracerCacheImpl>(context.clusterManager(), context.scope(),
-                                                    context.threadLocal());
+                                                        context.threadLocal());
       },
       /* pin = */ true);
 }
@@ -32,7 +33,8 @@ FluentdTracerFactory::FluentdTracerFactory() : FactoryBase("envoy.tracers.fluent
 Tracing::DriverSharedPtr FluentdTracerFactory::createTracerDriverTyped(
     const envoy::config::trace::v3::FluentdConfig& proto_config,
     Server::Configuration::TracerFactoryContext& context) {
-  return std::make_shared<Driver>(std::make_shared<FluentdConfig>(proto_config), context, getTracerCacheSingleton(context.serverFactoryContext()));
+  return std::make_shared<Driver>(std::make_shared<FluentdConfig>(proto_config), context,
+                                  getTracerCacheSingleton(context.serverFactoryContext()));
 }
 
 /**
