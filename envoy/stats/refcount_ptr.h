@@ -114,7 +114,6 @@ private:
 // during overload resolution, so these functions are no longer necessary and
 // cause segfaults due to attempting to infinitely reverse the operands back and
 // forth.
-
 #if __cplusplus < 202002L
 template <class T> static bool operator==(std::nullptr_t, const RefcountPtr<T>& a) {
   return a == nullptr; // NOLINT(clang-analyzer-cplusplus.Move)
