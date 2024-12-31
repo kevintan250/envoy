@@ -18,7 +18,8 @@ class FluentdTracerFactory : public Common::FactoryBase<envoy::config::trace::v3
 public:
   FluentdTracerFactory();
 
-  static FluentdTracerCacheSharedPtr getTracerCacheSingleton(Server::Configuration::ServerFactoryContext& context);
+  static FluentdTracerCacheSharedPtr
+  getTracerCacheSingleton(Server::Configuration::ServerFactoryContext& context);
 
 private:
   // FactoryBase
