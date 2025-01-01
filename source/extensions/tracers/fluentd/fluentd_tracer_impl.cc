@@ -195,7 +195,6 @@ FluentdTracerImpl::FluentdTracerImpl(Upstream::ThreadLocalCluster& cluster,
           PROTOBUF_GET_WRAPPED_OR_DEFAULT(config, buffer_size_bytes, DefaultMaxBufferSize)),
       retry_timer_(dispatcher.createTimer([this]() -> void { onBackoffCallback(); })),
       flush_timer_(dispatcher.createTimer([this]() {
-        ENVOY_LOG(info, "Flushing buffer due to timeout, entries: {}", entries_.size());
         flush();
         flush_timer_->enableTimer(buffer_flush_interval_msec_);
       })),
@@ -204,9 +203,6 @@ FluentdTracerImpl::FluentdTracerImpl(Upstream::ThreadLocalCluster& cluster,
 
   client_->setAsyncTcpClientCallbacks(*this);
   flush_timer_->enableTimer(buffer_flush_interval_msec_);
-
-  ENVOY_LOG(info, "Fluentd tracer initialized with buffer size {} bytes, flush interval {} ms",
-            max_buffer_size_bytes_, buffer_flush_interval_msec_.count());
 }
 
 // Initalize a span object
