@@ -212,9 +212,9 @@ FluentdTracerImpl::FluentdTracerImpl(Upstream::ThreadLocalCluster& cluster,
 // Initalize a span object
 Span::Span(Tracing::TraceContext& trace_context, SystemTime start_time,
            const std::string& operation_name, Tracing::Decision tracing_decision,
-           FluentdTracerSharedPtr tracer, const SpanContext& span_context)
+           FluentdTracerSharedPtr tracer, const SpanContext& span_context, TimeSource& time_source)
     : trace_context_(trace_context), start_time_(start_time), operation_(operation_name),
-      tracing_decision_(tracing_decision), tracer_(tracer), span_context_(span_context) {}
+      tracing_decision_(tracing_decision), tracer_(tracer), span_context_(span_context), time_source_(time_source) {}
 
 // Set the operation name for the span
 void Span::setOperation(absl::string_view operation) { operation_ = std::string(operation); }
@@ -318,7 +318,7 @@ Tracing::SpanPtr FluentdTracerImpl::startSpan(Tracing::TraceContext& trace_conte
       Hex::uint64ToHex(span_id), tracing_decision.traced, "");
 
   Span new_span(trace_context, start_time, operation_name, tracing_decision, shared_from_this(),
-                span_context);
+                span_context, time_source_);
 
   new_span.setSampled(tracing_decision.traced);
 
@@ -336,7 +336,7 @@ Tracing::SpanPtr FluentdTracerImpl::startSpan(Tracing::TraceContext& trace_conte
       previous_span_context.sampled(), previous_span_context.tracestate());
 
   Span new_span(trace_context, start_time, operation_name, tracing_decision, shared_from_this(),
-                span_context);
+                span_context, time_source_);
 
   new_span.setSampled(previous_span_context.sampled());
 

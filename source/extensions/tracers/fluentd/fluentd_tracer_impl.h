@@ -254,7 +254,7 @@ class Span : public Tracing::Span {
 public:
   Span(Tracing::TraceContext& trace_context, SystemTime start_time,
        const std::string& operation_name, Tracing::Decision tracing_decision,
-       FluentdTracerSharedPtr tracer, const SpanContext& span_context);
+       FluentdTracerSharedPtr tracer, const SpanContext& span_context, TimeSource& time_source);
 
   // Tracing::Span
   void setOperation(absl::string_view operation) override;
@@ -283,6 +283,7 @@ private:
   SpanContext span_context_;
   std::map<std::string, std::string> tags_;
   bool sampled_;
+  TimeSource& time_source_;
 };
 
 } // namespace Fluentd
