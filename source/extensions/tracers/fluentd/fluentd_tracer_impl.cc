@@ -19,9 +19,7 @@ using MessagePackBuffer = msgpack::sbuffer;
 using MessagePackPacker = msgpack::packer<msgpack::sbuffer>;
 
 // Handle Span and Trace context extraction and validation
-// Adapted from extensions/tracers/opentelemetry @alexanderellis @yanavlasov
-// Handle Span and Trace context extraction and validation
-// Adapted from extensions/tracers/opentelemetry @alexanderellis @yanavlasov
+// Adapted from OpenTelemetry tracer extension @alexanderellis @yanavlasov
 // See https://www.w3.org/TR/trace-context/#traceparent-header
 constexpr int kTraceparentHeaderSize = 55; // 2 + 1 + 32 + 1 + 16 + 1 + 2
 constexpr int kVersionHexSize = 2;
@@ -125,7 +123,6 @@ const Tracing::TraceContextHandler& traceStateHeader() {
 }
 
 // Initialize the Fluentd driver
-// Initialize the Fluentd driver
 Driver::Driver(const FluentdConfigSharedPtr fluentd_config,
                Server::Configuration::TracerFactoryContext& context,
                FluentdTracerCacheSharedPtr tracer_cache)
@@ -200,7 +197,6 @@ FluentdTracerImpl::FluentdTracerImpl(Upstream::ThreadLocalCluster& cluster,
       })),
       option_({{"fluent_signal", "2"}, {"TimeFormat", "DateTime"}}), random_(random),
       time_source_(time_source) {
-
   client_->setAsyncTcpClientCallbacks(*this);
   flush_timer_->enableTimer(buffer_flush_interval_msec_);
 }
